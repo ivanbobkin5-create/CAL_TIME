@@ -11,6 +11,7 @@ import jwt from "jsonwebtoken";
 import compression from "compression";
 import { localStore } from "./src/services/localStore";
 import { LDSP_DATABASE } from "./src/constants";
+import { DEFAULT_SYSTEM_BRANDS } from "./src/constants/systemBrands";
 
 const dbUrl = process.env.DATABASE_URL || "";
 let adjustedDbUrl: string | undefined = undefined;
@@ -1945,6 +1946,35 @@ function transliterate(str: string): string {
 
       const normalize = (s: string) => String(s || "").toLowerCase().replace(/[^a-z0-9а-яё]/gi, "");
 
+      // 0. Search Master Brand Catalog (Partner Ecosystem) FIRST
+      try {
+        const eco = await getPartnerEcosystemData();
+        for (const mp of eco.masterProducts || []) {
+          const mpMfg = normalize(mp.manufacturerArticle || mp.article);
+          const mpArt = normalize(mp.article);
+          const mpName = normalize(mp.name);
+          const matchMfg = normMfg && (mpMfg === normMfg || mpMfg.includes(normMfg) || mpArt === normMfg);
+          const matchArt = normArt && (mpArt === normArt || mpArt.includes(normArt) || mpMfg === normArt);
+          const matchName = normName && normName.length >= 3 && mpName.includes(normName);
+
+          if (matchMfg || matchArt || matchName) {
+            const partner = (eco.partners || []).find((p: any) => p.id === mp.partnerId);
+            seenIds.add(`master-${mp.id}`);
+            duplicates.push({
+              ...mp,
+              id: mp.id,
+              companyId: mp.partnerId || "master_brand_catalog",
+              isMasterBrandProduct: true,
+              isNovelty: !!mp.isNovelty,
+              brandPartnerName: partner?.name || mp.brand || mp.manufacturer || "Официальный бренд",
+              partnerSlug: partner?.partnerSlug || "",
+              brandSlug: partner?.brandSlugs?.[mp.brand || mp.manufacturer] || "",
+              officialDealers: partner?.dealers || []
+            });
+          }
+        }
+      } catch (_) {}
+
       for (const doc of normalizedDocs) {
         let data: any = {};
         try {
@@ -3302,6 +3332,1103 @@ function transliterate(str: string): string {
       res.json({ success: true, message: "Заявка удалена" });
     } catch (e: any) {
       console.error("Error in DELETE /api/system/applications/:id:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  // --- SYSTEM MATERIAL BRANDS CATALOG API ---
+  const getSystemBrandsList = async (): Promise<any[]> => {
+    const docPath = "system/material_brands";
+    const localDoc = localStore.getDoc(docPath);
+    if (localDoc && localDoc.data) {
+      try {
+        const parsed = typeof localDoc.data === "string" ? JSON.parse(localDoc.data) : localDoc.data;
+        if (Array.isArray(parsed?.brands) && parsed.brands.length > 0) {
+          return parsed.brands;
+        }
+      } catch (_) {}
+    }
+    if (isPostgresAvailable) {
+      try {
+        const doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
+        if (doc && doc.data) {
+          const parsed = typeof doc.data === "string" ? JSON.parse(doc.data) : doc.data;
+          localStore.setDoc(docPath, "system", "material_brands", doc.data, false, false);
+          if (Array.isArray(parsed?.brands) && parsed.brands.length > 0) {
+            return parsed.brands;
+          }
+        }
+      } catch (_) {}
+    }
+    return [...DEFAULT_SYSTEM_BRANDS];
+  };
+
+  const saveSystemBrandsList = async (brands: any[]) => {
+    const docPath = "system/material_brands";
+    const payload = { brands, updatedAt: new Date().toISOString() };
+    const dataStr = JSON.stringify(payload);
+    localStore.setDoc(docPath, "system", "material_brands", dataStr, false, true);
+    if (isPostgresAvailable) {
+      prisma.dbDocument.upsert({
+        where: { path: docPath },
+        create: {
+          path: docPath,
+          collection: "system",
+          docId: "material_brands",
+          data: dataStr,
+        },
+        update: {
+          data: dataStr,
+        },
+      }).catch(() => {});
+    }
+  };
+
+  app.get("/api/system/brands", async (req, res) => {
+    try {
+      const brands = await getSystemBrandsList();
+      res.json({ success: true, brands });
+    } catch (e: any) {
+      console.error("Error in GET /api/system/brands:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/system/brands", async (req, res) => {
+    try {
+      const body = req.body || {};
+      let brands = await getSystemBrandsList();
+
+      if (Array.isArray(body.brands)) {
+        brands = body.brands;
+      } else if (body.brandItem) {
+        const item = body.brandItem;
+        const cleanW = Number(item.width) || 2800;
+        const cleanH = Number(item.height) || 2070;
+        const formatStr = item.format || `${cleanW}x${cleanH}`;
+        const newItem = {
+          id: item.id || `sys_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          brand: String(item.brand || "").trim(),
+          type: item.type || "ЛДСП",
+          format: formatStr,
+          width: cleanW,
+          height: cleanH,
+          thicknesses: Array.isArray(item.thicknesses) && item.thicknesses.length > 0 ? item.thicknesses : ["16"],
+          edgeBrands: Array.isArray(item.edgeBrands) ? item.edgeBrands : [],
+          description: item.description || "",
+        };
+        const existingIdx = brands.findIndex(
+          (b: any) =>
+            b.id === newItem.id ||
+            (b.brand.toLowerCase() === newItem.brand.toLowerCase() &&
+              b.type === newItem.type &&
+              b.format === newItem.format)
+        );
+        if (existingIdx >= 0) {
+          brands[existingIdx] = { ...brands[existingIdx], ...newItem };
+        } else {
+          brands.push(newItem);
+        }
+      }
+
+      await saveSystemBrandsList(brands);
+      res.json({ success: true, brands });
+    } catch (e: any) {
+      console.error("Error in POST /api/system/brands:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.delete("/api/system/brands/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const brands = await getSystemBrandsList();
+      const filtered = brands.filter((b: any) => b.id !== id);
+      await saveSystemBrandsList(filtered);
+      res.json({ success: true, brands: filtered });
+    } catch (e: any) {
+      console.error("Error in DELETE /api/system/brands/:id:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  // --- PARTNER & BRAND REPRESENTATIVE ECOSYSTEM API ---
+  const DEFAULT_PARTNER_ECOSYSTEM = {
+    partners: [
+      {
+        id: "partner_boyard",
+        name: "BOYARD Россия (Официальное представительство)",
+        role: "brand_representative",
+        partnerSlug: "boyard-russia",
+        brandSlugs: { Boyard: "boyard" },
+        managedBrands: ["Boyard"],
+        city: "Екатеринбург",
+        phone: "+7 (800) 555-33-45",
+        email: "partner@boyard.biz",
+        website: "https:// www.boyard.biz",
+        description:
+          "Официальное представительство мебельной фурнитуры BOYARD в экосистеме «Мебель План». Системы выдвижения СТАРТ и B-BOX, петли с амортизацией, подъемные механизмы, сетчатое наполнение и лицевая фурнитура.",
+        categories: [
+          "Системы выдвижения",
+          "Петли",
+          "Ручки и крючки",
+          "Выдвижные корзины",
+          "Посудосушители",
+          "Оснащение шкафов",
+          "Крепежные элементы и цоколь"
+        ],
+        dealers: [
+          {
+            id: "dl_boyard_msk_1",
+            city: "Москва",
+            name: "Фирменный шоурум и склад BOYARD Москва",
+            address: "г. Москва, Каширское шоссе, д. 19, корп. 1",
+            phone: "+7 (495) 646-14-21",
+            website: "https://www.boyard.biz",
+            brands: ["Boyard"]
+          },
+          {
+            id: "dl_boyard_spb_1",
+            city: "Санкт-Петербург",
+            name: "Филиал BOYARD Санкт-Петербург",
+            address: "г. Санкт-Петербург, пр. Обуховской Обороны, д. 295",
+            phone: "+7 (812) 309-39-21",
+            website: "https://www.boyard.biz",
+            brands: ["Boyard"]
+          },
+          {
+            id: "dl_boyard_ekb_1",
+            city: "Екатеринбург",
+            name: "Головной офис и логистический центр BOYARD",
+            address: "г. Екатеринбург, пер. Автоматики, д. 1Ж",
+            phone: "+7 (343) 228-39-21",
+            website: "https://www.boyard.biz",
+            brands: ["Boyard"]
+          },
+          {
+            id: "dl_boyard_kzn_1",
+            city: "Казань",
+            name: "ТД Мебельная Фурнитура (Официальный дилер BOYARD)",
+            address: "г. Казань, ул. Тэцевская, д. 11",
+            phone: "+7 (843) 205-44-10",
+            website: "https://www.boyard.biz",
+            brands: ["Boyard"]
+          },
+          {
+            id: "dl_boyard_nsk_1",
+            city: "Новосибирск",
+            name: "Филиал BOYARD Новосибирск",
+            address: "г. Новосибирск, ул. Сибиряков-Гвардейцев, д. 49/3",
+            phone: "+7 (383) 363-39-21",
+            website: "https://www.boyard.biz",
+            brands: ["Boyard"]
+          },
+          {
+            id: "dl_boyard_krd_1",
+            city: "Краснодар",
+            name: "Филиал BOYARD Юг (Краснодар)",
+            address: "г. Краснодар, ул. Уральская, д. 126/1",
+            phone: "+7 (861) 203-39-21",
+            website: "https://www.boyard.biz",
+            brands: ["Boyard"]
+          }
+        ],
+        employees: [],
+        createdAt: "2026-01-15T10:00:00.000Z"
+      },
+      {
+        id: "partner_egger",
+        name: "EGGER (Представительство и Дистрибуция)",
+        role: "brand_representative",
+        partnerSlug: "egger-russia",
+        brandSlugs: { Egger: "egger" },
+        managedBrands: ["Egger"],
+        city: "Москва",
+        phone: "+7 (495) 783-13-00",
+        email: "info-ru@egger.com",
+        website: "https://www.egger.com",
+        description:
+          "Официальный каталог декоров, плитных материалов ЛДСП/МДФ, столешниц и кромочных материалов EGGER. Актуальная коллекция декоров, синхронные поры Feelwood и поверхности PerfectSense.",
+        categories: [
+          "Столешницы и стеновые",
+          "Плитные материалы ЛДСП / МДФ",
+          "Кромочные материалы"
+        ],
+        dealers: [
+          {
+            id: "dl_egger_msk_1",
+            city: "Москва",
+            name: "Базис-Центр Плит (Официальный дистрибьютор EGGER)",
+            address: "Московская обл., г. Химки, Вашутинское шоссе, вл. 18",
+            phone: "+7 (495) 988-00-15",
+            website: "https://www.egger.com",
+            brands: ["Egger"]
+          },
+          {
+            id: "dl_egger_spb_1",
+            city: "Санкт-Петербург",
+            name: "СеверПлит (Официальный дилер EGGER)",
+            address: "г. Санкт-Петербург, Индустриальный пр., д. 44",
+            phone: "+7 (812) 448-12-90",
+            website: "https://www.egger.com",
+            brands: ["Egger"]
+          },
+          {
+            id: "dl_egger_ekb_1",
+            city: "Екатеринбург",
+            name: "УралПлитМаркет (Официальный дилер EGGER)",
+            address: "г. Екатеринбург, Сибирский тракт, 12 км, стр. 8",
+            phone: "+7 (343) 379-08-55",
+            website: "https://www.egger.com",
+            brands: ["Egger"]
+          }
+        ],
+        employees: [],
+        createdAt: "2026-01-20T10:00:00.000Z"
+      }
+    ],
+    masterProducts: [
+      {
+        id: "mp_boyard_h309",
+        partnerId: "partner_boyard",
+        brand: "Boyard",
+        manufacturer: "Boyard",
+        manufacturerArticle: "H309A02/0910",
+        article: "H309A02/0910",
+        name: "Петля накладная BOYARD NEO H309 с доводчиком и 3D-регулировкой Clip-On",
+        category: "Петли",
+        hingeType: "Накладная",
+        hingeDamping: "С доводчиком",
+        color: "Никель / Графит",
+        unit: "шт",
+        purchasePrice: 118,
+        price: 185,
+        isNovelty: true,
+        description:
+          "Флагманская накладная петля BOYARD NEO H309A02/0910 с интегрированным гидравлическим амортизатором нового поколения. Плавное закрывание с малых углов, быстрый монтаж Clip-On и эксцентриковая 3D-регулировка.",
+        images: [
+          "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=600&q=80"
+        ],
+        variations: [],
+        updatedAt: "2026-02-01T12:00:00.000Z"
+      },
+      {
+        id: "mp_boyard_db450",
+        partnerId: "partner_boyard",
+        brand: "Boyard",
+        manufacturer: "Boyard",
+        manufacturerArticle: "DB4461Gr.1/450",
+        article: "DB4461Gr.1/450",
+        name: "Направляющие скрытого монтажа BOYARD B-SLIDE полного выдвижения с доводчиком, 450 мм",
+        category: "Системы выдвижения",
+        drawerSubCategory: "Направляющие скрытого монтажа",
+        runnerType: "С доводчиком",
+        extensionType: "Полное",
+        depth: "450",
+        color: "Графит",
+        unit: "компл",
+        purchasePrice: 1290,
+        price: 1950,
+        isNovelty: false,
+        description:
+          "Синхронизированные направляющие скрытого монтажа BOYARD B-SLIDE DB4461. Нагрузка до 40 кг, ресурс 80 000 циклов, 3D-замки в комплекте для быстрой регулировки фасада без инструмента.",
+        images: [
+          "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=600&q=80"
+        ],
+        variations: [],
+        updatedAt: "2026-02-05T12:00:00.000Z"
+      },
+      {
+        id: "mp_boyard_sb09",
+        partnerId: "partner_boyard",
+        brand: "Boyard",
+        manufacturer: "Boyard",
+        manufacturerArticle: "SB09G.1/86/500",
+        article: "SB09G.1/86/500",
+        name: "Система выдвижных ящиков BOYARD СТАРТ с тонкими металлическими боковинами H=86, L=500 мм, антрацит",
+        category: "Системы выдвижения",
+        drawerSubCategory: "Системы ящиков",
+        runnerType: "С доводчиком",
+        extensionType: "Полное",
+        depth: "500",
+        drawerType: "Стандартный",
+        color: "Антрацит",
+        unit: "компл",
+        purchasePrice: 2450,
+        price: 3680,
+        isNovelty: true,
+        description:
+          "Современная система инсталляции ящиков СТАРТ с прямыми ультратонкими стенками (13 мм) в цвете благородный антрацит. Бесшумный ход, полная синхронизация и нагрузка до 40 кг.",
+        images: [
+          "https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?auto=format&fit=crop&w=600&q=80"
+        ],
+        variations: [],
+        updatedAt: "2026-02-10T12:00:00.000Z"
+      },
+      {
+        id: "mp_egger_wt_h1180",
+        partnerId: "partner_egger",
+        brand: "Egger",
+        manufacturer: "Egger",
+        wtManufacturer: "Egger",
+        manufacturerArticle: "H1180-ST37-38",
+        article: "H1180-ST37-38",
+        name: "Столешница EGGER H1180 ST37 Дуб Галифакс натуральный 4100×600×38 мм",
+        category: "Столешницы и стеновые",
+        wtGroup: "Столешница",
+        wtType: "ЛДСП",
+        wtLength: "4100",
+        wtDepth: "600",
+        wtThickness: "38",
+        wtSlope: "R3",
+        color: "Дуб Галифакс натуральный",
+        unit: "шт",
+        purchasePrice: 11800,
+        price: 16500,
+        isNovelty: true,
+        description:
+          "Столешница EGGER с синхронной структурой Feelwood Рифт ST37, имитирующей глубокие трещины и рельеф массива натурального дуба. Повышенная влагостойкость и ударопрочность.",
+        images: [
+          "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=600&q=80"
+        ],
+        variations: [],
+        updatedAt: "2026-02-12T12:00:00.000Z"
+      }
+    ],
+    invites: [] as any[]
+  };
+
+  const getPartnerEcosystemData = async (): Promise<{
+    partners: any[];
+    masterProducts: any[];
+    invites: any[];
+  }> => {
+    const docPath = "system/partner_ecosystem";
+    const localDoc = localStore.getDoc(docPath);
+    if (localDoc && localDoc.data) {
+      try {
+        const parsed = typeof localDoc.data === "string" ? JSON.parse(localDoc.data) : localDoc.data;
+        if (parsed && Array.isArray(parsed.partners)) {
+          return {
+            partners: parsed.partners,
+            masterProducts: Array.isArray(parsed.masterProducts) ? parsed.masterProducts : [],
+            invites: Array.isArray(parsed.invites) ? parsed.invites : []
+          };
+        }
+      } catch (_) {}
+    }
+    if (isPostgresAvailable) {
+      try {
+        const doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
+        if (doc && doc.data) {
+          const parsed = typeof doc.data === "string" ? JSON.parse(doc.data) : doc.data;
+          localStore.setDoc(docPath, "system", "partner_ecosystem", doc.data, false, false);
+          if (parsed && Array.isArray(parsed.partners)) {
+            return {
+              partners: parsed.partners,
+              masterProducts: Array.isArray(parsed.masterProducts) ? parsed.masterProducts : [],
+              invites: Array.isArray(parsed.invites) ? parsed.invites : []
+            };
+          }
+        }
+      } catch (_) {}
+    }
+    return JSON.parse(JSON.stringify(DEFAULT_PARTNER_ECOSYSTEM));
+  };
+
+  const savePartnerEcosystemData = async (data: {
+    partners: any[];
+    masterProducts: any[];
+    invites: any[];
+  }) => {
+    const docPath = "system/partner_ecosystem";
+    const payload = {
+      ...data,
+      updatedAt: new Date().toISOString()
+    };
+    const dataStr = JSON.stringify(payload);
+    localStore.setDoc(docPath, "system", "partner_ecosystem", dataStr, false, true);
+    if (isPostgresAvailable) {
+      prisma.dbDocument.upsert({
+        where: { path: docPath },
+        create: {
+          path: docPath,
+          collection: "system",
+          docId: "partner_ecosystem",
+          data: dataStr
+        },
+        update: {
+          data: dataStr
+        }
+      }).catch(() => {});
+    }
+  };
+
+  const slugifyBrandOrPartner = (raw: string): string => {
+    const cyrToLat: Record<string, string> = {
+      а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z",
+      и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r",
+      с: "s", т: "t", у: "u", ф: "f", х: "h", ц: "ts", ч: "ch", ш: "sh", щ: "sch",
+      ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya"
+    };
+    return String(raw || "")
+      .trim()
+      .toLowerCase()
+      .split("")
+      .map(ch => cyrToLat[ch] !== undefined ? cyrToLat[ch] : ch)
+      .join("")
+      .replace(/[^a-z0-9_-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "");
+  };
+
+  const normalizePartnerObj = (p: any) => {
+    if (!p) return p;
+    const raw = p.brandSlugs;
+    const slugsArr = Array.isArray(raw)
+      ? raw
+      : (raw && typeof raw === "object"
+          ? Object.values(raw)
+          : (typeof raw === "string" ? raw.split(",") : []));
+    const cleanSlugs = slugsArr.map((s: any) => String(s || "").trim()).filter(Boolean);
+    return {
+      ...p,
+      companyName: p.companyName || p.name,
+      brandSlugs: cleanSlugs,
+    };
+  };
+
+  app.get("/api/partner/ecosystem", async (req, res) => {
+    try {
+      const eco = await getPartnerEcosystemData();
+      res.json({
+        success: true,
+        partners: (eco.partners || []).map(normalizePartnerObj),
+        masterProducts: eco.masterProducts,
+        invites: eco.invites
+      });
+    } catch (e: any) {
+      console.error("Error in GET /api/partner/ecosystem:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.get("/api/partner/resolve/:slug", async (req, res) => {
+    try {
+      const cleanSlug = String(req.params.slug || "").trim().toLowerCase();
+      const eco = await getPartnerEcosystemData();
+
+      // 1. Check direct partnerSlug or partner id
+      const partnerBySlug = eco.partners.find(
+        (p: any) =>
+          String(p.partnerSlug || "").toLowerCase() === cleanSlug ||
+          String(p.id || "").toLowerCase() === cleanSlug
+      );
+      if (partnerBySlug) {
+        const products = eco.masterProducts.filter(
+          (mp: any) =>
+            mp.partnerId === partnerBySlug.id ||
+            (Array.isArray(partnerBySlug.managedBrands) &&
+              partnerBySlug.managedBrands.some(
+                (b: string) => b.toLowerCase() === String(mp.brand || mp.manufacturer || "").toLowerCase()
+              ))
+        );
+        return res.json({
+          success: true,
+          resolvedType: "partner",
+          partner: normalizePartnerObj(partnerBySlug),
+          brandName: partnerBySlug.managedBrands?.[0] || partnerBySlug.name,
+          masterProducts: products,
+          dealers: partnerBySlug.dealers || []
+        });
+      }
+
+      // 2. Check direct brandSlug (e.g. mebel-plan.ru/boyard or mebel-plan.ru/egger)
+      for (const p of eco.partners) {
+        const raw = p.brandSlugs;
+        const slugsMap: Record<string, string> = {};
+        if (Array.isArray(raw)) {
+          const brandName = p.managedBrands?.[0] || p.name;
+          raw.forEach((s: any) => { if (s) slugsMap[brandName] = String(s); });
+        } else if (raw && typeof raw === "object") {
+          Object.assign(slugsMap, raw);
+        }
+        for (const [bName, bSlug] of Object.entries(slugsMap)) {
+          if (String(bSlug || "").toLowerCase() === cleanSlug || slugifyBrandOrPartner(bName) === cleanSlug) {
+            const products = eco.masterProducts.filter(
+              (mp: any) =>
+                String(mp.brand || mp.manufacturer || "").toLowerCase() === bName.toLowerCase() ||
+                mp.partnerId === p.id
+            );
+            // Collect all dealers across all partners that supply this brand
+            const allDealersForBrand: any[] = [];
+            for (const otherP of eco.partners) {
+              for (const dl of otherP.dealers || []) {
+                const dlBrands = Array.isArray(dl.brands) ? dl.brands : otherP.managedBrands || [];
+                if (dlBrands.some((db: string) => db.toLowerCase() === bName.toLowerCase())) {
+                  allDealersForBrand.push(dl);
+                }
+              }
+            }
+            return res.json({
+              success: true,
+              resolvedType: "brand",
+              partner: normalizePartnerObj(p),
+              brandName: bName,
+              masterProducts: products,
+              dealers: allDealersForBrand.length > 0 ? allDealersForBrand : (p.dealers || [])
+            });
+          }
+        }
+      }
+
+      res.status(404).json({ success: false, error: "Партнер или бренд не найден" });
+    } catch (e: any) {
+      console.error("Error in GET /api/partner/resolve/:slug:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/partner/check-slug", async (req, res) => {
+    try {
+      const { slug, kind = "partner", currentPartnerId } = req.body || {};
+      const clean = slugifyBrandOrPartner(slug || "");
+      if (!clean || clean.length < 2) {
+        return res.json({ available: false, cleanSlug: clean, reason: "Минимум 2 символа латиницей или цифрами" });
+      }
+
+      const reserved = [
+        "login", "register", "admin", "dashboard", "api", "assets", "static", "favicon.ico",
+        "c", "s", "store", "vitrina", "shop", "vtr", "erp", "installer", "p", "package", "pkg",
+        "partner", "supplier", "brand", "brands", "calculator", "projects", "products", "services",
+        "service-section", "price", "production", "employees", "settings", "promotions",
+        "specification", "profile", "procurement", "procurement_plan", "arrivals", "summary",
+        "checkout_current", "ready_made", "privacy", "terms", "oferta", "politika"
+      ];
+      if (reserved.includes(clean)) {
+        return res.json({ available: false, cleanSlug: clean, reason: "Системный адрес зарезервирован" });
+      }
+
+      const eco = await getPartnerEcosystemData();
+      for (const p of eco.partners) {
+        if (currentPartnerId && p.id === currentPartnerId) continue;
+        if (String(p.partnerSlug || "").toLowerCase() === clean) {
+          return res.json({ available: false, cleanSlug: clean, reason: "Этот адрес уже занят другим партнером" });
+        }
+        const bSlugs = p.brandSlugs || {};
+        for (const val of Object.values(bSlugs)) {
+          if (String(val || "").toLowerCase() === clean) {
+            return res.json({ available: false, cleanSlug: clean, reason: "Этот прямой адрес бренда уже занят" });
+          }
+        }
+      }
+
+      // If checking a direct root brand slug, also check company aliases
+      if (kind === "brand") {
+        const compList = localStore.getCollection("companies");
+        for (const cDoc of compList) {
+          try {
+            const c = typeof cDoc.data === "string" ? JSON.parse(cDoc.data) : cDoc.data;
+            if (String(c?.alias || "").toLowerCase() === clean || String(c?.id || "").toLowerCase() === clean) {
+              return res.json({ available: false, cleanSlug: clean, reason: "Этот адрес уже используется мебельной компанией" });
+            }
+          } catch (_) {}
+        }
+      }
+
+      res.json({ available: true, cleanSlug: clean });
+    } catch (e: any) {
+      res.status(500).json({ available: false, error: String(e) });
+    }
+  });
+
+  app.post("/api/partner/invite", async (req, res) => {
+    try {
+      const {
+        email,
+        companyName,
+        contactName,
+        role = "brand_representative", // 'brand_representative' | 'dealer'
+        city = "",
+        phone = "",
+        website = "",
+        managedBrands = [],
+        partnerSlug: customPartnerSlug,
+        brandSlugs: customBrandSlugs,
+        partnerId: existingPartnerId,
+        isEmployeeInvite = false,
+        employeeRole = "manager",
+        applicationId
+      } = req.body || {};
+
+      const cleanEmail = String(email || "").trim().toLowerCase();
+      if (!cleanEmail) {
+        return res.status(400).json({ error: "Укажите E-mail для отправки приглашения" });
+      }
+
+      const eco = await getPartnerEcosystemData();
+      const token = `inv_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 9)}`;
+      const randomShortId = `id${Math.floor(10000 + Math.random() * 90000)}`;
+
+      let partner = existingPartnerId
+        ? eco.partners.find((p: any) => p.id === existingPartnerId)
+        : eco.partners.find((p: any) => String(p.email || "").toLowerCase() === cleanEmail);
+
+      const cleanBrands: string[] = Array.isArray(managedBrands)
+        ? managedBrands.map((b: any) => String(b || "").trim()).filter(Boolean)
+        : [];
+
+      if (!partner && !isEmployeeInvite) {
+        const newPartnerId = `partner_${Date.now().toString(36)}`;
+        const initialPartnerSlug = customPartnerSlug
+          ? slugifyBrandOrPartner(customPartnerSlug)
+          : randomShortId;
+
+        const computedBrandSlugs: Record<string, string> = {};
+        if (role === "brand_representative") {
+          for (const bName of cleanBrands) {
+            const desired = customBrandSlugs?.[bName]
+              ? slugifyBrandOrPartner(customBrandSlugs[bName])
+              : slugifyBrandOrPartner(bName);
+            if (desired) computedBrandSlugs[bName] = desired;
+          }
+        }
+
+        partner = {
+          id: newPartnerId,
+          name: String(companyName || cleanBrands[0] || "Партнер Мебель План").trim(),
+          role,
+          partnerSlug: initialPartnerSlug,
+          brandSlugs: computedBrandSlugs,
+          managedBrands: cleanBrands,
+          city: String(city || "").trim(),
+          phone: String(phone || "").trim(),
+          email: cleanEmail,
+          website: String(website || "").trim(),
+          description:
+            role === "brand_representative"
+              ? `Официальное представительство бренда ${cleanBrands.join(", ")} в экосистеме «Мебель План».`
+              : `Официальный поставщик и дилер (${cleanBrands.join(", ")}) в экосистеме «Мебель План».`,
+          categories: [
+            "Системы выдвижения",
+            "Петли",
+            "Ручки и крючки",
+            "Столешницы и стеновые",
+            "Мойки и аксессуары",
+            "Освещение",
+            "Выдвижные корзины",
+            "Оснащение шкафов"
+          ],
+          dealers: city
+            ? [
+                {
+                  id: `dl_${Date.now()}`,
+                  city: String(city).trim(),
+                  name: String(companyName || cleanBrands[0] || "Официальный склад").trim(),
+                  address: `г. ${String(city).trim()}`,
+                  phone: String(phone || "").trim(),
+                  website: String(website || "").trim(),
+                  brands: cleanBrands
+                }
+              ]
+            : [],
+          employees: [],
+          createdAt: new Date().toISOString()
+        };
+        eco.partners.unshift(partner);
+      } else if (partner && !isEmployeeInvite) {
+        if (companyName) partner.name = String(companyName).trim();
+        if (role) partner.role = role;
+        if (city) partner.city = String(city).trim();
+        if (phone) partner.phone = String(phone).trim();
+        if (cleanBrands.length > 0) {
+          partner.managedBrands = Array.from(new Set([...(partner.managedBrands || []), ...cleanBrands]));
+        }
+        if (customPartnerSlug) {
+          partner.partnerSlug = slugifyBrandOrPartner(customPartnerSlug);
+        }
+        if (customBrandSlugs && typeof customBrandSlugs === "object") {
+          partner.brandSlugs = { ...(partner.brandSlugs || {}), ...customBrandSlugs };
+        }
+      }
+
+      if (!partner) {
+        return res.status(404).json({ error: "Кабинет партнера не найден" });
+      }
+
+      const inviteRecord = {
+        token,
+        email: cleanEmail,
+        partnerId: partner.id,
+        companyName: partner.name,
+        contactName: String(contactName || "").trim(),
+        role: partner.role,
+        isEmployeeInvite: !!isEmployeeInvite,
+        employeeRole: isEmployeeInvite ? employeeRole : "owner",
+        city: partner.city,
+        managedBrands: partner.managedBrands || [],
+        partnerSlug: partner.partnerSlug,
+        brandSlugs: partner.brandSlugs || {},
+        status: "pending",
+        createdAt: new Date().toISOString()
+      };
+
+      if (isEmployeeInvite) {
+        partner.employees = Array.isArray(partner.employees) ? partner.employees : [];
+        const existingEmpIdx = partner.employees.findIndex(
+          (e: any) => String(e.email || "").toLowerCase() === cleanEmail
+        );
+        const empEntry = {
+          id: `emp_${Date.now().toString(36)}`,
+          email: cleanEmail,
+          name: String(contactName || cleanEmail.split("@")[0]).trim(),
+          role: employeeRole || "manager",
+          status: "invited",
+          inviteToken: token,
+          createdAt: new Date().toISOString()
+        };
+        if (existingEmpIdx >= 0) {
+          partner.employees[existingEmpIdx] = { ...partner.employees[existingEmpIdx], ...empEntry };
+        } else {
+          partner.employees.push(empEntry);
+        }
+      }
+
+      eco.invites = [inviteRecord, ...(eco.invites || []).filter((i: any) => i.token !== token)];
+      await savePartnerEcosystemData(eco);
+
+      // If created from an application in Superadmin, mark it approved
+      if (applicationId) {
+        try {
+          const appDocPath = `company_applications/${applicationId}`;
+          const existingApp = localStore.getDoc(appDocPath);
+          if (existingApp) {
+            const parsedApp = typeof existingApp.data === "string" ? JSON.parse(existingApp.data) : existingApp.data;
+            const updatedApp = {
+              ...parsedApp,
+              status: "approved",
+              reviewedAt: new Date().toISOString(),
+              partnerId: partner.id,
+              inviteToken: token
+            };
+            localStore.setDoc(appDocPath, "company_applications", applicationId, JSON.stringify(updatedApp), false, true);
+          }
+        } catch (_) {}
+      }
+
+      const hostHeader = req.get("x-forwarded-host") || req.get("host") || "mebel-plan.ru";
+      const proto = req.get("x-forwarded-proto") || "https";
+      const baseOrigin = hostHeader.includes("localhost") ? `http://${hostHeader}` : `${proto}://${hostHeader}`;
+      const inviteUrl = `${baseOrigin}/partner/invite/${token}`;
+      const cabinetUrl = `${baseOrigin}/partner/${partner.partnerSlug}`;
+
+      // Send email invitation
+      const brandListStr = (partner.managedBrands || []).join(", ") || partner.name;
+      const emailSubject = isEmployeeInvite
+        ? `Приглашение в кабинет компании «${partner.name}» — Мебель План`
+        : `Приглашение для представителя бренда / поставщика «${partner.name}» — Мебель План`;
+      const emailBody = [
+        `Здравствуйте${contactName ? `, ${contactName}` : ""}!`,
+        ``,
+        isEmployeeInvite
+          ? `Вас пригласили в качестве сотрудника в кабинет представительства «${partner.name}» на платформе «Мебель План».`
+          : `Для вашей компании «${partner.name}» (${brandListStr}) создан официальный кабинет в экосистеме «Мебель План».`,
+        ``,
+        `🔗 Для завершения регистрации и установки пароля перейдите по персональной ссылке:`,
+        `${inviteUrl}`,
+        ``,
+        `После установки пароля вам будет доступен личный кабинет по адресу:`,
+        `${cabinetUrl}`,
+        Object.values(partner.brandSlugs || {}).length > 0
+          ? `Прямая бренд-страница: ${baseOrigin}/${Object.values(partner.brandSlugs)[0]}`
+          : null,
+        ``,
+        `С уважением,`,
+        `Команда «Мебель План»`
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      sendEmail(cleanEmail, emailSubject, emailBody).catch(() => {});
+
+      res.json({
+        success: true,
+        invite: inviteRecord,
+        partner,
+        inviteUrl,
+        cabinetUrl
+      });
+    } catch (e: any) {
+      console.error("Error in POST /api/partner/invite:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.get("/api/partner/invite/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const eco = await getPartnerEcosystemData();
+      const invite = eco.invites.find((i: any) => i.token === token);
+      if (!invite) {
+        return res.status(404).json({ error: "Приглашение не найдено или устарело" });
+      }
+      const partner = eco.partners.find((p: any) => p.id === invite.partnerId);
+      res.json({
+        success: true,
+        invite,
+        partner
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/partner/accept-invite", async (req, res) => {
+    try {
+      const { token, password, name } = req.body || {};
+      if (!token || !password || String(password).trim().length < 6) {
+        return res.status(400).json({ error: "Пароль должен содержать минимум 6 символов" });
+      }
+
+      const eco = await getPartnerEcosystemData();
+      const inviteIdx = eco.invites.findIndex((i: any) => i.token === token);
+      if (inviteIdx === -1) {
+        return res.status(404).json({ error: "Приглашение не найдено" });
+      }
+
+      const invite = eco.invites[inviteIdx];
+      const partner = eco.partners.find((p: any) => p.id === invite.partnerId);
+      if (!partner) {
+        return res.status(404).json({ error: "Кабинет партнера не найден" });
+      }
+
+      const lowerEmail = String(invite.email).trim().toLowerCase();
+      const cleanPassword = String(password).trim();
+      const hashedPassword = await bcrypt.hash(cleanPassword, 10);
+      let userUid = `partner_user_${Date.now().toString(36)}`;
+
+      if (isPostgresAvailable) {
+        try {
+          const existing = await dbQueryWithRetry(() => prisma.authUser.findUnique({ where: { email: lowerEmail } }));
+          if (existing) {
+            userUid = existing.uid;
+            await dbQueryWithRetry(() =>
+              prisma.authUser.update({
+                where: { email: lowerEmail },
+                data: { password: hashedPassword, verified: true }
+              })
+            );
+          } else {
+            const created = await dbQueryWithRetry(() =>
+              prisma.authUser.create({
+                data: { email: lowerEmail, password: hashedPassword, verified: true }
+              })
+            );
+            userUid = created.uid;
+          }
+        } catch (_) {}
+      }
+
+      localStore.upsertUser(lowerEmail, hashedPassword, true, userUid);
+
+      const displayName = String(name || invite.contactName || partner.name).trim();
+      const userProfile = {
+        uid: userUid,
+        id: userUid,
+        email: lowerEmail,
+        displayName,
+        name: displayName,
+        companyId: partner.id,
+        partnerId: partner.id,
+        partnerSlug: partner.partnerSlug,
+        isPartner: true,
+        partnerRole: invite.employeeRole || "owner",
+        role: "admin",
+        verified: true,
+        createdAt: new Date().toISOString()
+      };
+
+      localStore.setDoc(`users/${userUid}`, "users", userUid, JSON.stringify(userProfile), false, true);
+      if (isPostgresAvailable) {
+        prisma.dbDocument
+          .upsert({
+            where: { path: `users/${userUid}` },
+            create: {
+              path: `users/${userUid}`,
+              collection: "users",
+              docId: userUid,
+              data: JSON.stringify(userProfile)
+            },
+            update: {
+              data: JSON.stringify(userProfile)
+            }
+          })
+          .catch(() => {});
+      }
+
+      invite.status = "accepted";
+      invite.acceptedAt = new Date().toISOString();
+      invite.acceptedUid = userUid;
+
+      if (invite.isEmployeeInvite && Array.isArray(partner.employees)) {
+        const emp = partner.employees.find((e: any) => String(e.email || "").toLowerCase() === lowerEmail);
+        if (emp) {
+          emp.status = "active";
+          emp.name = displayName;
+          emp.uid = userUid;
+        }
+      } else {
+        partner.ownerUid = userUid;
+        partner.ownerEmail = lowerEmail;
+        partner.ownerName = displayName;
+      }
+
+      await savePartnerEcosystemData(eco);
+
+      const jwtToken = jwt.sign({ uid: userUid, email: lowerEmail, isPartner: true, partnerId: partner.id }, JWT_SECRET, {
+        expiresIn: "30d"
+      });
+
+      res.json({
+        success: true,
+        uid: userUid,
+        email: lowerEmail,
+        token: jwtToken,
+        partner,
+        userProfile
+      });
+    } catch (e: any) {
+      console.error("Error in POST /api/partner/accept-invite:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/partner/save-profile", async (req, res) => {
+    try {
+      const { partnerId, updates } = req.body || {};
+      if (!partnerId || !updates) {
+        return res.status(400).json({ error: "partnerId and updates are required" });
+      }
+
+      const eco = await getPartnerEcosystemData();
+      const idx = eco.partners.findIndex((p: any) => p.id === partnerId);
+      if (idx === -1) {
+        return res.status(404).json({ error: "Партнер не найден" });
+      }
+
+      const current = eco.partners[idx];
+      const nextPartnerSlug = updates.partnerSlug
+        ? slugifyBrandOrPartner(updates.partnerSlug)
+        : current.partnerSlug;
+
+      // Validate partnerSlug uniqueness if changed
+      if (nextPartnerSlug && nextPartnerSlug !== current.partnerSlug) {
+        const taken = eco.partners.some(
+          (p: any) => p.id !== partnerId && String(p.partnerSlug || "").toLowerCase() === nextPartnerSlug
+        );
+        if (taken) {
+          return res.status(400).json({ error: `Адрес /partner/${nextPartnerSlug} уже занят другим партнером` });
+        }
+      }
+
+      const nextBrandSlugs: Record<string, string> = { ...(current.brandSlugs || {}) };
+      if (updates.brandSlugs && typeof updates.brandSlugs === "object") {
+        for (const [bName, bSlug] of Object.entries(updates.brandSlugs)) {
+          const cleanBSlug = slugifyBrandOrPartner(String(bSlug || ""));
+          if (cleanBSlug) {
+            const takenByOther = eco.partners.some((p: any) => {
+              if (p.id === partnerId) return false;
+              const otherSlugs = Object.values(p.brandSlugs || {}).map((s: any) => String(s || "").toLowerCase());
+              return otherSlugs.includes(cleanBSlug) || String(p.partnerSlug || "").toLowerCase() === cleanBSlug;
+            });
+            if (takenByOther) {
+              return res.status(400).json({ error: `Прямой адрес бренда /${cleanBSlug} уже занят` });
+            }
+            nextBrandSlugs[bName] = cleanBSlug;
+          }
+        }
+      }
+
+      const updatedPartner = {
+        ...current,
+        ...updates,
+        id: partnerId,
+        partnerSlug: nextPartnerSlug || current.partnerSlug,
+        brandSlugs: nextBrandSlugs,
+        updatedAt: new Date().toISOString()
+      };
+
+      eco.partners[idx] = updatedPartner;
+      await savePartnerEcosystemData(eco);
+
+      res.json({ success: true, partner: updatedPartner });
+    } catch (e: any) {
+      console.error("Error in POST /api/partner/save-profile:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/partner/master-products", async (req, res) => {
+    try {
+      const { product, partnerId } = req.body || {};
+      if (!product || !product.name || !product.manufacturerArticle) {
+        return res.status(400).json({ error: "Укажите наименование и артикул производителя" });
+      }
+
+      const eco = await getPartnerEcosystemData();
+      const prodId = product.id || `mp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const cleanBrand = String(product.brand || product.manufacturer || "").trim();
+      const cleanMfgArt = String(product.manufacturerArticle || "").trim();
+
+      const savedProduct = {
+        ...product,
+        id: prodId,
+        partnerId: partnerId || product.partnerId || "",
+        brand: cleanBrand,
+        manufacturer: cleanBrand,
+        manufacturerArticle: cleanMfgArt,
+        article: product.article || cleanMfgArt,
+        isNovelty: !!product.isNovelty,
+        images: Array.isArray(product.images) ? product.images : product.image ? [product.image] : [],
+        updatedAt: new Date().toISOString()
+      };
+
+      const existingIdx = eco.masterProducts.findIndex((p: any) => p.id === prodId);
+      if (existingIdx >= 0) {
+        eco.masterProducts[existingIdx] = savedProduct;
+      } else {
+        eco.masterProducts.unshift(savedProduct);
+      }
+
+      await savePartnerEcosystemData(eco);
+      res.json({ success: true, product: savedProduct, masterProducts: eco.masterProducts });
+    } catch (e: any) {
+      console.error("Error in POST /api/partner/master-products:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.delete("/api/partner/master-products/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const eco = await getPartnerEcosystemData();
+      eco.masterProducts = eco.masterProducts.filter((p: any) => p.id !== id);
+      await savePartnerEcosystemData(eco);
+      res.json({ success: true, masterProducts: eco.masterProducts });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.delete("/api/partner/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const eco = await getPartnerEcosystemData();
+      eco.partners = eco.partners.filter((p: any) => p.id !== id);
+      eco.invites = eco.invites.filter((i: any) => i.partnerId !== id);
+      await savePartnerEcosystemData(eco);
+      res.json({ success: true, partners: eco.partners });
+    } catch (e: any) {
       res.status(500).json({ error: String(e) });
     }
   });

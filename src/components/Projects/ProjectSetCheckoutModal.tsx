@@ -251,7 +251,7 @@ export const ProjectSetCheckoutModal = ({
               totalServicesPrice += row.total || 0;
               services.push({ ...row, projectName: p.name });
             }
-          } else if (row.type === "facade" || rowNameLower.includes("фасад")) {
+          } else if (row.type === "facade" || (row.type !== "edge" && rowNameLower.includes("фасад"))) {
              if (rowNameLower.includes("заказн")) {
                totalCustomFacadePrice += row.total || 0;
              } else {

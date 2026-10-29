@@ -44,12 +44,13 @@ import {
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { SystemNewsItem } from "../Notifications/NotificationCenterModal";
+import { DEFAULT_SYSTEM_BRANDS, SystemBrandItem } from "../../constants/systemBrands";
 
 export interface CompanyApplication {
   id: string;
   companyId: string;
   companyName: string;
-  type: "erp_access" | "bitrix_integration" | "production_partnership" | "general" | "custom";
+  type: "erp_access" | "bitrix_integration" | "production_partnership" | "brand_request" | "supplier_partner_request" | "general" | "custom";
   title: string;
   message?: string;
   contactName?: string;
@@ -60,6 +61,25 @@ export interface CompanyApplication {
   reviewedAt?: string;
   reviewedBy?: string;
   adminComment?: string;
+  brandRequestData?: {
+    brand: string;
+    type: "ЛДСП" | "МДФ" | "ХДФ";
+    width?: number;
+    height?: number;
+    format?: string;
+    thicknesses?: string[];
+    comment?: string;
+  };
+  partnerRequestData?: {
+    role: "brand_representative" | "dealer";
+    companyName: string;
+    brands: string[];
+    city?: string;
+    contactName?: string;
+    email?: string;
+    phone?: string;
+    comment?: string;
+  };
 }
 
 interface CompanyItem {
@@ -122,8 +142,8 @@ interface AdminSettings {
 }
 
 export interface AppAdminViewProps {
-  activeTab?: "overview" | "companies" | "applications" | "news" | "socials" | "users" | "notifications" | "requisites" | "database";
-  onTabChange?: (tab: "overview" | "companies" | "applications" | "news" | "socials" | "users" | "notifications" | "requisites" | "database") => void;
+  activeTab?: "overview" | "companies" | "applications" | "brands" | "partners" | "news" | "socials" | "users" | "notifications" | "requisites" | "database";
+  onTabChange?: (tab: "overview" | "companies" | "applications" | "brands" | "partners" | "news" | "socials" | "users" | "notifications" | "requisites" | "database") => void;
   hideTopNav?: boolean;
 }
 
@@ -133,13 +153,13 @@ export const AppAdminView: React.FC<AppAdminViewProps> = ({
   hideTopNav = false,
 }) => {
   const [internalActiveTab, setInternalActiveTab] = useState<
-    "overview" | "companies" | "applications" | "news" | "socials" | "users" | "notifications" | "requisites" | "database"
+    "overview" | "companies" | "applications" | "brands" | "partners" | "news" | "socials" | "users" | "notifications" | "requisites" | "database"
   >("overview");
 
   const activeTab = externalActiveTab || internalActiveTab;
 
   const setActiveTab = (
-    tab: "overview" | "companies" | "applications" | "news" | "socials" | "users" | "notifications" | "requisites" | "database"
+    tab: "overview" | "companies" | "applications" | "brands" | "partners" | "news" | "socials" | "users" | "notifications" | "requisites" | "database"
   ) => {
     setInternalActiveTab(tab);
     if (onTabChange) {
@@ -154,6 +174,32 @@ export const AppAdminView: React.FC<AppAdminViewProps> = ({
   const [appTypeTab, setAppTypeTab] = useState<"module_requests" | "company_apps">("module_requests");
   const [totalProjectsCount, setTotalProjectsCount] = useState<number>(0);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+
+  // Global System Material Brands Catalog State
+  const [systemBrands, setSystemBrands] = useState<SystemBrandItem[]>(DEFAULT_SYSTEM_BRANDS);
+  const [brandSearchQuery, setBrandSearchQuery] = useState("");
+  const [brandTypeFilter, setBrandTypeFilter] = useState<"all" | "ЛДСП" | "МДФ" | "ХДФ">("all");
+  const [showBrandModal, setShowBrandModal] = useState(false);
+  const [editingBrandItem, setEditingBrandItem] = useState<SystemBrandItem | null>(null);
+  const [linkedBrandRequestApp, setLinkedBrandRequestApp] = useState<CompanyApplication | null>(null);
+  const [brandForm, setBrandForm] = useState<{
+    brand: string;
+    type: "ЛДСП" | "МДФ" | "ХДФ";
+    width: number;
+    height: number;
+    thicknessesStr: string;
+    edgeBrandsStr: string;
+    description: string;
+  }>({
+    brand: "",
+    type: "ЛДСП",
+    width: 2800,
+    height: 2070,
+    thicknessesStr: "10, 16, 22, 25",
+    edgeBrandsStr: "",
+    description: "",
+  });
+  const [savingBrand, setSavingBrand] = useState(false);
   
   // Requisites state
   const [paymentRequisites, setPaymentRequisites] = useState({
@@ -256,6 +302,116 @@ export const AppAdminView: React.FC<AppAdminViewProps> = ({
   const [publishingSocialPost, setPublishingSocialPost] = useState(false);
   const [lastPublishReport, setLastPublishReport] = useState<Record<string, { ok: boolean; message: string }> | null>(null);
 
+  // Partner & Brand Representative Ecosystem State
+  const [partnerEcosystem, setPartnerEcosystem] = useState<{
+    partners: any[];
+    masterProducts: any[];
+    invites: any[];
+  }>({ partners: [], masterProducts: [], invites: [] });
+  const [showPartnerInviteModal, setShowPartnerInviteModal] = useState(false);
+  const [linkedPartnerApp, setLinkedPartnerApp] = useState<CompanyApplication | null>(null);
+  const [partnerInviteForm, setPartnerInviteForm] = useState({
+    email: "",
+    companyName: "",
+    contactName: "",
+    phone: "",
+    city: "Москва",
+    role: "brand_representative" as "brand_representative" | "dealer",
+    selectedBrands: [] as string[],
+    customBrandInput: "",
+  });
+  const [partnerInviteGenerating, setPartnerInviteGenerating] = useState(false);
+  const [generatedPartnerInviteLink, setGeneratedPartnerInviteLink] = useState("");
+
+  const availableSelectableBrands = useMemo(() => {
+    const hardwareAndAccessoriesBrands = [
+      "Boyard",
+      "Blum",
+      "Hettich",
+      "GTV",
+      "Hafele",
+      "Firmax",
+      "Aristo",
+      "Premial",
+      "Omoikiri",
+      "Granfest",
+      "Florentina",
+      "Rehau",
+      "Galoplast",
+    ];
+    const fromSystem = systemBrands.map((b) => b.brand);
+    return Array.from(new Set([...fromSystem, ...hardwareAndAccessoriesBrands]));
+  }, [systemBrands]);
+
+  const openPartnerInviteModalForApp = (app?: CompanyApplication) => {
+    setGeneratedPartnerInviteLink("");
+    if (app) {
+      setLinkedPartnerApp(app);
+      setPartnerInviteForm({
+        email: app.partnerRequestData?.email || app.contactEmail || "",
+        companyName: app.partnerRequestData?.companyName || app.companyName || "",
+        contactName: app.partnerRequestData?.contactName || app.contactName || "",
+        phone: app.partnerRequestData?.phone || app.contactPhone || "",
+        city: app.partnerRequestData?.city || "Москва",
+        role: app.partnerRequestData?.role || "brand_representative",
+        selectedBrands: app.partnerRequestData?.brands || [],
+        customBrandInput: "",
+      });
+    } else {
+      setLinkedPartnerApp(null);
+      setPartnerInviteForm({
+        email: "",
+        companyName: "",
+        contactName: "",
+        phone: "",
+        city: "Москва",
+        role: "brand_representative",
+        selectedBrands: [],
+        customBrandInput: "",
+      });
+    }
+    setShowPartnerInviteModal(true);
+  };
+
+  const handleGeneratePartnerInvite = async () => {
+    if (!partnerInviteForm.email.trim() || !partnerInviteForm.companyName.trim()) {
+      showToast("Укажите E-mail и название компании партнера", "error");
+      return;
+    }
+    setPartnerInviteGenerating(true);
+    try {
+      const res = await fetch("/api/partner/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: partnerInviteForm.email.trim(),
+          companyName: partnerInviteForm.companyName.trim(),
+          contactName: partnerInviteForm.contactName.trim(),
+          phone: partnerInviteForm.phone.trim(),
+          city: partnerInviteForm.city.trim(),
+          role: partnerInviteForm.role,
+          managedBrands:
+            partnerInviteForm.selectedBrands.length > 0
+              ? partnerInviteForm.selectedBrands
+              : [partnerInviteForm.companyName.trim()],
+          applicationId: linkedPartnerApp?.id,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Ошибка создания приглашения");
+      }
+      const fullLink = `${window.location.origin}${data.inviteUrl}`;
+      setGeneratedPartnerInviteLink(fullLink);
+      showToast("Кабинет партнера создан, ссылка-приглашение сформирована!");
+      loadSystemData();
+    } catch (err: any) {
+      showToast(err.message || "Не удалось создать приглашение", "error");
+    } finally {
+      setPartnerInviteGenerating(false);
+    }
+  };
+
   // Load All System Data
   const loadSystemData = async () => {
     try {
@@ -316,12 +472,55 @@ export const AppAdminView: React.FC<AppAdminViewProps> = ({
 
       // 4. Load Applications
       const appRes = await fetch("/api/system/applications");
+      let loadedApps: any[] = [];
       if (appRes.ok) {
         const appData = await appRes.json();
         if (appData.applications && Array.isArray(appData.applications)) {
-          setApplications(appData.applications);
+          loadedApps = appData.applications;
         }
       }
+      try {
+        const pending = JSON.parse(localStorage.getItem("pending_company_applications") || "[]");
+        if (Array.isArray(pending) && pending.length > 0) {
+          const existingIds = new Set(loadedApps.map((a: any) => a.id));
+          const missing = pending.filter((a: any) => !existingIds.has(a.id));
+          if (missing.length > 0) {
+            loadedApps = [...missing, ...loadedApps];
+            missing.forEach((item: any) => {
+              fetch("/api/system/applications", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(item),
+              }).catch(() => {});
+            });
+          }
+        }
+      } catch (_) {}
+      setApplications(loadedApps);
+
+      // 4a. Load System Material Brands Catalog
+      try {
+        const brandsRes = await fetch("/api/system/brands");
+        if (brandsRes.ok) {
+          const brandsData = await brandsRes.json();
+          if (Array.isArray(brandsData.brands) && brandsData.brands.length > 0) {
+            setSystemBrands(brandsData.brands);
+          }
+        }
+      } catch (_) {}
+
+      // 4a-2. Load Partner & Brand Representative Ecosystem
+      try {
+        const ecoRes = await fetch("/api/partner/ecosystem");
+        if (ecoRes.ok) {
+          const ecoData = await ecoRes.json();
+          setPartnerEcosystem({
+            partners: Array.isArray(ecoData.partners) ? ecoData.partners : [],
+            masterProducts: Array.isArray(ecoData.masterProducts) ? ecoData.masterProducts : [],
+            invites: Array.isArray(ecoData.invites) ? ecoData.invites : [],
+          });
+        }
+      } catch (_) {}
 
       // 4b. Load Module Payment Requests
       try {
@@ -795,6 +994,150 @@ export const AppAdminView: React.FC<AppAdminViewProps> = ({
     }
   };
 
+  // Open Brand Modal (for new brand, editing existing brand, or verifying a company's brand_request)
+  const openBrandModalForApp = (app: CompanyApplication) => {
+    const reqData = app.brandRequestData || {
+      brand: app.title.replace(/^Заявка на бренд:\s*/i, "").trim(),
+      type: "ЛДСП" as const,
+      width: 2800,
+      height: 2070,
+      format: "2800x2070",
+      thicknesses: ["16"],
+      comment: app.message || "",
+    };
+    let w = Number(reqData.width) || 2800;
+    let h = Number(reqData.height) || 2070;
+    if (reqData.format && (!reqData.width || !reqData.height)) {
+      const parts = String(reqData.format).toLowerCase().replace(/[×*х]/g, "x").split("x").map(n => parseInt(n.trim(), 10));
+      if (parts.length >= 2 && parts[0] > 100 && parts[1] > 100) {
+        w = parts[0];
+        h = parts[1];
+      }
+    }
+    setEditingBrandItem(null);
+    setLinkedBrandRequestApp(app);
+    setBrandForm({
+      brand: reqData.brand || "",
+      type: reqData.type || "ЛДСП",
+      width: w,
+      height: h,
+      thicknessesStr: Array.isArray(reqData.thicknesses) && reqData.thicknesses.length > 0 ? reqData.thicknesses.join(", ") : "16",
+      edgeBrandsStr: reqData.brand || "",
+      description: reqData.comment ? `Добавлено по заявке компании «${app.companyName}»` : "",
+    });
+    setShowBrandModal(true);
+  };
+
+  const handleSaveSystemBrand = async () => {
+    const cleanBrand = brandForm.brand.trim();
+    if (!cleanBrand) {
+      showToast("Укажите название бренда", "error");
+      return;
+    }
+    const cleanW = Number(brandForm.width) || 2800;
+    const cleanH = Number(brandForm.height) || 2070;
+    const thicknesses = brandForm.thicknessesStr
+      .split(/[,;\s]+/)
+      .map(s => s.replace(/мм/gi, "").trim())
+      .filter(Boolean);
+    const edgeBrands = brandForm.edgeBrandsStr
+      .split(/[,;]+/)
+      .map(s => s.trim())
+      .filter(Boolean);
+
+    setSavingBrand(true);
+    try {
+      const brandItem: SystemBrandItem = {
+        id: editingBrandItem?.id || `sys_${brandForm.type === "ЛДСП" ? "ldsp" : brandForm.type === "МДФ" ? "mdf" : "hdf"}_${Date.now()}`,
+        brand: cleanBrand,
+        type: brandForm.type,
+        format: `${cleanW}x${cleanH}`,
+        width: cleanW,
+        height: cleanH,
+        thicknesses: thicknesses.length > 0 ? thicknesses : ["16"],
+        edgeBrands,
+        description: brandForm.description.trim(),
+      };
+
+      const res = await fetch("/api/system/brands", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandItem }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.brands)) {
+          setSystemBrands(data.brands);
+        }
+
+        // If linked to a company's brand_request application, mark it approved and auto-attach to the company's production settings
+        if (linkedBrandRequestApp) {
+          await handleUpdateApplicationStatus(linkedBrandRequestApp, "approved");
+          try {
+            const prodPath = `/api/db/doc/companies/${linkedBrandRequestApp.companyId}/settings/production`;
+            const prodRes = await fetch(prodPath);
+            const prodData = prodRes.ok ? await prodRes.json() : {};
+            const existingBrands = Array.isArray(prodData?.ldspBrands) ? prodData.ldspBrands : [];
+            const alreadyInCompany = existingBrands.some(
+              (b: any) => String(b.brand || "").toLowerCase() === cleanBrand.toLowerCase() && b.type === brandForm.type
+            );
+            if (!alreadyInCompany) {
+              const updatedLdspBrands = [
+                ...existingBrands,
+                {
+                  id: brandItem.id,
+                  brand: brandItem.brand,
+                  format: brandItem.format,
+                  type: brandItem.type,
+                  thicknesses: brandItem.thicknesses,
+                },
+              ];
+              await fetch(prodPath, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  data: { ...(prodData || {}), ldspBrands: updatedLdspBrands },
+                  merge: true,
+                }),
+              });
+            }
+          } catch (_) {}
+          showToast(`Бренд «${cleanBrand}» внесен в систему и добавлен компании «${linkedBrandRequestApp.companyName}»!`);
+        } else {
+          showToast(editingBrandItem ? `Бренд «${cleanBrand}» обновлен!` : `Бренд «${cleanBrand}» добавлен в каталог системы!`);
+        }
+
+        setShowBrandModal(false);
+        setEditingBrandItem(null);
+        setLinkedBrandRequestApp(null);
+      } else {
+        showToast("Не удалось сохранить бренд", "error");
+      }
+    } catch {
+      showToast("Ошибка сети при сохранении бренда", "error");
+    } finally {
+      setSavingBrand(false);
+    }
+  };
+
+  const handleDeleteSystemBrand = async (brand: SystemBrandItem) => {
+    try {
+      const res = await fetch(`/api/system/brands/${encodeURIComponent(brand.id)}`, { method: "DELETE" });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.brands)) {
+          setSystemBrands(data.brands);
+        } else {
+          setSystemBrands(prev => prev.filter(b => b.id !== brand.id));
+        }
+        showToast(`Бренд «${brand.brand}» удален из системы`);
+      }
+    } catch {
+      showToast("Ошибка при удалении бренда", "error");
+    }
+  };
+
   // Approve / Reject Module Payment Request
   const handleUpdateModuleRequestStatus = async (reqId: string, status: "approved" | "rejected") => {
     try {
@@ -1077,6 +1420,42 @@ export const AppAdminView: React.FC<AppAdminViewProps> = ({
               {stats.pendingApps > 0 && (
                 <span className="w-5 h-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center font-black animate-pulse">
                   {stats.pendingApps}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab("brands")}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap relative",
+                activeTab === "brands"
+                  ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
+                  : "text-gray-600 hover:text-gray-900"
+              )}
+            >
+              <Layers className="w-4 h-4" />
+              <span>Каталог брендов ({systemBrands.length})</span>
+              {applications.filter(a => a.type === "brand_request" && a.status === "pending").length > 0 && (
+                <span className="w-5 h-5 rounded-full bg-amber-500 text-white text-[10px] flex items-center justify-center font-black">
+                  {applications.filter(a => a.type === "brand_request" && a.status === "pending").length}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab("partners")}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap relative",
+                activeTab === "partners"
+                  ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
+                  : "text-gray-600 hover:text-gray-900"
+              )}
+            >
+              <Truck className="w-4 h-4" />
+              <span>Поставщики и Бренды ({partnerEcosystem.partners.length})</span>
+              {applications.filter(a => a.type === "supplier_partner_request" && a.status === "pending").length > 0 && (
+                <span className="w-5 h-5 rounded-full bg-amber-500 text-white text-[10px] flex items-center justify-center font-black">
+                  {applications.filter(a => a.type === "supplier_partner_request" && a.status === "pending").length}
                 </span>
               )}
             </button>
@@ -1727,13 +2106,31 @@ export const AppAdminView: React.FC<AppAdminViewProps> = ({
                       <div className="flex items-center gap-2 shrink-0 border-t md:border-t-0 pt-3 md:pt-0">
                         {app.status === "pending" ? (
                           <>
-                            <button
-                              onClick={() => handleUpdateApplicationStatus(app, "approved")}
-                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-                            >
-                              <Check className="w-4 h-4" />
-                              <span>Одобрить доступ</span>
-                            </button>
+                            {app.type === "brand_request" ? (
+                              <button
+                                onClick={() => openBrandModalForApp(app)}
+                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <Layers className="w-4 h-4" />
+                                <span>Проверить и внести бренд в систему</span>
+                              </button>
+                            ) : app.type === "supplier_partner_request" ? (
+                              <button
+                                onClick={() => openPartnerInviteModalForApp(app)}
+                                className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-extrabold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <Send className="w-4 h-4" />
+                                <span>Создать кабинет и пригласить</span>
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleUpdateApplicationStatus(app, "approved")}
+                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <Check className="w-4 h-4" />
+                                <span>Одобрить доступ</span>
+                              </button>
+                            )}
                             <button
                               onClick={() => handleUpdateApplicationStatus(app, "rejected")}
                               className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
@@ -1756,6 +2153,371 @@ export const AppAdminView: React.FC<AppAdminViewProps> = ({
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* TAB: GLOBAL SYSTEM MATERIAL BRANDS CATALOG */}
+        {activeTab === "brands" && (
+          <div className="space-y-6 animate-in fade-in duration-200">
+            {/* Header */}
+            <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                  <Layers className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-base font-extrabold text-gray-900">Единый каталог брендов плитных материалов</h2>
+                  <p className="text-xs text-gray-500">
+                    Производства выбирают бренды только из этого системного справочника, ограничивая работу своих менеджеров разрешенными брендами и форматами листов
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  setEditingBrandItem(null);
+                  setLinkedBrandRequestApp(null);
+                  setBrandForm({
+                    brand: "",
+                    type: "ЛДСП",
+                    width: 2800,
+                    height: 2070,
+                    thicknessesStr: "10, 16, 22, 25",
+                    edgeBrandsStr: "",
+                    description: "",
+                  });
+                  setShowBrandModal(true);
+                }}
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-2 transition-all shadow-sm shadow-blue-200 cursor-pointer shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Добавить бренд в систему</span>
+              </button>
+            </div>
+
+            {/* Incoming Brand Requests from Companies */}
+            {applications.filter(a => a.type === "brand_request" && a.status === "pending").length > 0 && (
+              <div className="bg-amber-50/90 border border-amber-200 rounded-3xl p-6 space-y-4">
+                <div className="flex items-center gap-2.5">
+                  <Inbox className="w-5 h-5 text-amber-600" />
+                  <h3 className="text-sm font-black text-amber-950 uppercase tracking-wider">
+                    Новые заявки от производств на добавление бренда ({applications.filter(a => a.type === "brand_request" && a.status === "pending").length})
+                  </h3>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {applications
+                    .filter(a => a.type === "brand_request" && a.status === "pending")
+                    .map(app => (
+                      <div key={app.id} className="bg-white p-4 rounded-2xl border border-amber-200 shadow-2xs flex flex-col justify-between gap-3">
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase">
+                              Запрос бренда
+                            </span>
+                            <span className="text-[11px] text-gray-400">
+                              {new Date(app.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          </div>
+                          <h4 className="text-sm font-extrabold text-gray-900">{app.title}</h4>
+                          {app.message && (
+                            <p className="text-xs text-gray-600 bg-gray-50 p-2.5 rounded-xl border border-gray-100 whitespace-pre-line">{app.message}</p>
+                          )}
+                          <p className="text-[11px] text-gray-500">
+                            От компании: <strong className="text-gray-800">{app.companyName}</strong> ({app.contactName || app.contactEmail || app.contactPhone || app.companyId})
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+                          <button
+                            onClick={() => openBrandModalForApp(app)}
+                            className="flex-1 py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                          >
+                            <Check className="w-4 h-4" />
+                            <span>Проверить и внести в систему</span>
+                          </button>
+                          <button
+                            onClick={() => handleUpdateApplicationStatus(app, "rejected")}
+                            className="py-2 px-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          >
+                            Отклонить
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Search & Type Filter */}
+            <div className="bg-white p-4 rounded-3xl border border-gray-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Поиск по названию бренда, формату листа (например, Egger, Lamarty, 2800x2070)..."
+                  value={brandSearchQuery}
+                  onChange={e => setBrandSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:outline-none focus:border-blue-600"
+                />
+              </div>
+              <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl">
+                {(["all", "ЛДСП", "МДФ", "ХДФ"] as const).map(t => (
+                  <button
+                    key={t}
+                    onClick={() => setBrandTypeFilter(t)}
+                    className={cn(
+                      "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                      brandTypeFilter === t ? "bg-white text-blue-600 shadow-2xs font-extrabold" : "text-gray-600 hover:text-gray-900"
+                    )}
+                  >
+                    {t === "all" ? "Все типы" : t === "МДФ" ? "МДФ / Фасадные" : t}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Brands Table */}
+            <div className="bg-white rounded-3xl border border-gray-200/80 shadow-xs overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-gray-50/80 border-b border-gray-100 text-[11px] font-black text-gray-400 uppercase tracking-wider">
+                      <th className="py-3.5 px-5">Бренд материала</th>
+                      <th className="py-3.5 px-4">Тип плиты</th>
+                      <th className="py-3.5 px-4">Формат листа (Д×Ш)</th>
+                      <th className="py-3.5 px-4">Доступные толщины</th>
+                      <th className="py-3.5 px-4">Кромка</th>
+                      <th className="py-3.5 px-5 text-right">Действия</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 text-xs">
+                    {systemBrands
+                      .filter(b => {
+                        if (brandTypeFilter !== "all" && b.type !== brandTypeFilter) return false;
+                        if (!brandSearchQuery.trim()) return true;
+                        const q = brandSearchQuery.toLowerCase().trim();
+                        return (
+                          b.brand.toLowerCase().includes(q) ||
+                          b.format.toLowerCase().includes(q) ||
+                          b.type.toLowerCase().includes(q) ||
+                          (b.description || "").toLowerCase().includes(q)
+                        );
+                      })
+                      .map(b => (
+                        <tr key={b.id} className="hover:bg-gray-50/60 transition-colors">
+                          <td className="py-3.5 px-5">
+                            <div className="font-extrabold text-gray-900 text-sm">{b.brand}</div>
+                            {b.description && <div className="text-[11px] text-gray-400 mt-0.5">{b.description}</div>}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span
+                              className={cn(
+                                "px-2.5 py-1 rounded-lg text-[11px] font-extrabold",
+                                b.type === "ЛДСП"
+                                  ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                  : b.type === "МДФ"
+                                    ? "bg-purple-50 text-purple-700 border border-purple-200"
+                                    : "bg-amber-50 text-amber-700 border border-amber-200"
+                              )}
+                            >
+                              {b.type}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 font-mono font-bold text-gray-800">
+                            {b.width} × {b.height} мм
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <div className="flex flex-wrap gap-1">
+                              {(b.thicknesses || ["16"]).map(th => (
+                                <span key={th} className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded-md font-bold text-[11px]">
+                                  {th} мм
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4 text-gray-500">
+                            {b.edgeBrands && b.edgeBrands.length > 0 ? b.edgeBrands.join(", ") : "Стандарт"}
+                          </td>
+                          <td className="py-3.5 px-5 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => {
+                                  setEditingBrandItem(b);
+                                  setLinkedBrandRequestApp(null);
+                                  setBrandForm({
+                                    brand: b.brand,
+                                    type: b.type,
+                                    width: b.width,
+                                    height: b.height,
+                                    thicknessesStr: (b.thicknesses || ["16"]).join(", "),
+                                    edgeBrandsStr: (b.edgeBrands || []).join(", "),
+                                    description: b.description || "",
+                                  });
+                                  setShowBrandModal(true);
+                                }}
+                                className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors cursor-pointer"
+                                title="Редактировать параметры бренда"
+                              >
+                                <Edit3 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteSystemBrand(b)}
+                                className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors cursor-pointer"
+                                title="Удалить бренд из каталога"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal for Adding / Editing System Brand */}
+        {showBrandModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-200">
+              <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/60">
+                <div>
+                  <h3 className="text-base font-black text-gray-900">
+                    {linkedBrandRequestApp
+                      ? "Проверка и внесение бренда по заявке"
+                      : editingBrandItem
+                        ? "Редактирование бренда в каталоге"
+                        : "Добавление бренда в каталог системы"}
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {linkedBrandRequestApp
+                      ? `Заявка от компании «${linkedBrandRequestApp.companyName}»`
+                      : "Укажите точные параметры плиты и размеры листа"}
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowBrandModal(false);
+                    setEditingBrandItem(null);
+                    setLinkedBrandRequestApp(null);
+                  }}
+                  className="p-2 text-gray-400 hover:text-gray-700 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="sm:col-span-2">
+                    <label className="block font-extrabold text-gray-700 mb-1.5">Название бренда *</label>
+                    <input
+                      type="text"
+                      value={brandForm.brand}
+                      onChange={e => setBrandForm(prev => ({ ...prev, brand: e.target.value }))}
+                      placeholder="Например: Egger, Lamarty, AGT..."
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-600 font-bold text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-extrabold text-gray-700 mb-1.5">Тип материала *</label>
+                    <select
+                      value={brandForm.type}
+                      onChange={e => setBrandForm(prev => ({ ...prev, type: e.target.value as any }))}
+                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-600 font-bold text-sm bg-white"
+                    >
+                      <option value="ЛДСП">ЛДСП</option>
+                      <option value="МДФ">МДФ (Фасадные)</option>
+                      <option value="ХДФ">ХДФ / ДВП</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block font-extrabold text-gray-700 mb-1.5">Длина листа (мм) *</label>
+                    <input
+                      type="number"
+                      value={brandForm.width}
+                      onChange={e => setBrandForm(prev => ({ ...prev, width: parseInt(e.target.value, 10) || 0 }))}
+                      placeholder="2800"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-600 font-mono font-bold text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-extrabold text-gray-700 mb-1.5">Ширина листа (мм) *</label>
+                    <input
+                      type="number"
+                      value={brandForm.height}
+                      onChange={e => setBrandForm(prev => ({ ...prev, height: parseInt(e.target.value, 10) || 0 }))}
+                      placeholder="2070"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-600 font-mono font-bold text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-extrabold text-gray-700 mb-1.5">Доступные толщины (мм, через запятую)</label>
+                  <input
+                    type="text"
+                    value={brandForm.thicknessesStr}
+                    onChange={e => setBrandForm(prev => ({ ...prev, thicknessesStr: e.target.value }))}
+                    placeholder="Например: 10, 16, 18, 22, 25"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-600 font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-extrabold text-gray-700 mb-1.5">Совместимые бренды кромки (через запятую)</label>
+                  <input
+                    type="text"
+                    value={brandForm.edgeBrandsStr}
+                    onChange={e => setBrandForm(prev => ({ ...prev, edgeBrandsStr: e.target.value }))}
+                    placeholder="Например: Egger, Rehau, Galoplast"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-600 font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-extrabold text-gray-700 mb-1.5">Описание / примечание</label>
+                  <input
+                    type="text"
+                    value={brandForm.description}
+                    onChange={e => setBrandForm(prev => ({ ...prev, description: e.target.value }))}
+                    placeholder="Краткое описание формата или производителя"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-600"
+                  />
+                </div>
+              </div>
+
+              <div className="p-6 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setShowBrandModal(false);
+                    setEditingBrandItem(null);
+                    setLinkedBrandRequestApp(null);
+                  }}
+                  className="px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-xs font-bold hover:bg-gray-100 transition-colors cursor-pointer"
+                >
+                  Отмена
+                </button>
+                <button
+                  onClick={handleSaveSystemBrand}
+                  disabled={savingBrand}
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-extrabold transition-all shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>
+                    {savingBrand
+                      ? "Сохранение..."
+                      : linkedBrandRequestApp
+                        ? "Внести в систему и одобрить заявку"
+                        : "Сохранить бренд"}
+                  </span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -1857,6 +2619,426 @@ export const AppAdminView: React.FC<AppAdminViewProps> = ({
                 >
                   <Save className="w-4 h-4" />
                   <span>{savingRequisites ? "Сохранение..." : "Сохранить реквизиты ИП"}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB: SUPPLIERS & BRAND REPRESENTATIVES ECOSYSTEM */}
+        {activeTab === "partners" && (
+          <div className="space-y-6 animate-in fade-in duration-200">
+            <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                  <Truck className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-base font-extrabold text-gray-900">
+                    Кабинеты поставщиков и представителей брендов
+                  </h2>
+                  <p className="text-xs text-gray-500">
+                    Закрытая регистрация по приглашению. Прямые адреса брендов (<span className="font-mono font-bold text-gray-700">mebel-plan.ru/boyard</span>) и кабинеты партнеров (<span className="font-mono font-bold text-gray-700">mebel-plan.ru/partner/...</span>)
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => openPartnerInviteModalForApp()}
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-2 transition-all shadow-sm shadow-blue-200 cursor-pointer shrink-0"
+              >
+                <Send className="w-4 h-4" />
+                <span>Пригласить представителя бренда / поставщика</span>
+              </button>
+            </div>
+
+            {/* Incoming Supplier/Brand Applications */}
+            {applications.filter((a) => a.type === "supplier_partner_request" && a.status === "pending").length > 0 && (
+              <div className="bg-amber-50/90 border border-amber-200 rounded-3xl p-6 space-y-4">
+                <div className="flex items-center gap-2.5">
+                  <Inbox className="w-5 h-5 text-amber-600" />
+                  <h3 className="text-sm font-black text-amber-950 uppercase tracking-wider">
+                    Заявки от поставщиков и представителей брендов ({applications.filter((a) => a.type === "supplier_partner_request" && a.status === "pending").length})
+                  </h3>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {applications
+                    .filter((a) => a.type === "supplier_partner_request" && a.status === "pending")
+                    .map((app) => (
+                      <div key={app.id} className="bg-white p-4 rounded-2xl border border-amber-200 shadow-2xs flex flex-col justify-between gap-3">
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase">
+                              Заявка партнера
+                            </span>
+                            <span className="text-[11px] text-gray-400">
+                              {new Date(app.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          </div>
+                          <h4 className="text-sm font-extrabold text-gray-900">{app.title}</h4>
+                          {app.message && (
+                            <p className="text-xs text-gray-600 bg-gray-50 p-2.5 rounded-xl border border-gray-100 whitespace-pre-line">{app.message}</p>
+                          )}
+                          <div className="text-[11px] text-gray-500">
+                            E-mail: <strong className="text-gray-900">{app.contactEmail}</strong> • Тел: <strong className="text-gray-900">{app.contactPhone}</strong>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+                          <button
+                            onClick={() => openPartnerInviteModalForApp(app)}
+                            className="flex-1 py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                          >
+                            <Send className="w-3.5 h-3.5" />
+                            <span>Создать кабинет и выслать приглашение</span>
+                          </button>
+                          <button
+                            onClick={() => handleUpdateApplicationStatus(app, "rejected")}
+                            className="py-2 px-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          >
+                            Отклонить
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Partners List */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {partnerEcosystem.partners.map((partner) => {
+                const prodCount = partnerEcosystem.masterProducts.filter((m) => m.partnerId === partner.id).length;
+                const pendingInvite = partnerEcosystem.invites.find(
+                  (inv) => inv.partnerId === partner.id && inv.status === "pending" && !inv.isEmployeeInvite
+                );
+                return (
+                  <div
+                    key={partner.id}
+                    className="bg-white rounded-3xl border border-gray-200/80 p-6 shadow-xs flex flex-col justify-between gap-4"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <span className="px-2.5 py-0.5 rounded-md bg-blue-50 text-blue-700 text-[10px] font-black uppercase">
+                            {partner.role === "brand_representative" ? "Представитель бренда" : "Официальный дилер / Поставщик"}
+                          </span>
+                          <h3 className="text-base font-black text-gray-900 mt-1">{partner.companyName}</h3>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            const res = await fetch(`/api/partner/${encodeURIComponent(partner.id)}`, { method: "DELETE" });
+                            if (res.ok) {
+                              showToast("Кабинет партнера удален");
+                              loadSystemData();
+                            }
+                          }}
+                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors cursor-pointer"
+                          title="Удалить кабинет партнера"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5">
+                        {(partner.managedBrands || []).map((b: string) => (
+                          <span key={b} className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs font-extrabold">
+                            Бренд: {b}
+                          </span>
+                        ))}
+                      </div>
+
+                      <div className="p-3 rounded-2xl bg-gray-50 border border-gray-100 space-y-1 text-xs">
+                        <div>
+                          Кабинет партнера:{" "}
+                          <a
+                            href={`/partner/${partner.partnerSlug}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-mono font-bold text-blue-600 hover:underline"
+                          >
+                            mebel-plan.ru/partner/{partner.partnerSlug}
+                          </a>
+                        </div>
+                        {(() => {
+                          const raw = partner.brandSlugs;
+                          const slugs: string[] = Array.isArray(raw)
+                            ? raw
+                            : (raw && typeof raw === "object"
+                                ? Object.values(raw)
+                                : (typeof raw === "string" ? raw.split(",") : []));
+                          const cleanSlugs = slugs.map((s: any) => String(s || "").trim()).filter(Boolean);
+                          if (cleanSlugs.length === 0) return null;
+                          return (
+                            <div>
+                              Прямая бренд-ссылка:{" "}
+                              {cleanSlugs.map((bs: string) => (
+                                <a
+                                  key={bs}
+                                  href={`/${bs}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="font-mono font-bold text-indigo-600 hover:underline mr-2"
+                                >
+                                  mebel-plan.ru/{bs}
+                                </a>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                        <div className="text-gray-500 pt-1">
+                          E-mail владельца: <strong className="text-gray-800">{partner.ownerEmail || partner.email || "—"}</strong>
+                        </div>
+                      </div>
+
+                      {pendingInvite && (
+                        <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-2 text-xs">
+                          <div className="truncate font-mono text-emerald-900">
+                            Ссылка приглашения: /partner/invite/{pendingInvite.token}
+                          </div>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(`${window.location.origin}/partner/invite/${pendingInvite.token}`);
+                              showToast("Ссылка-приглашение скопирована!");
+                            }}
+                            className="px-3 py-1 rounded-lg bg-emerald-600 text-white font-bold shrink-0 cursor-pointer"
+                          >
+                            Копировать
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-3 border-t border-gray-100 flex items-center justify-between gap-3 text-xs">
+                      <div className="text-gray-500">
+                        Эталонных товаров: <strong className="text-gray-900">{prodCount}</strong> • Дилеров:{" "}
+                        <strong className="text-gray-900">{(partner.dealers || []).length}</strong>
+                      </div>
+                      <a
+                        href={`/partner/${partner.partnerSlug}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-4 py-2 rounded-xl bg-gray-900 hover:bg-blue-600 text-white font-bold flex items-center gap-1.5 transition-colors"
+                      >
+                        <span>Открыть кабинет</span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: INVITE PARTNER / BRAND REPRESENTATIVE */}
+        {showPartnerInviteModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
+            <div className="bg-white rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl border border-gray-100 my-8">
+              <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+                <div>
+                  <h3 className="text-base font-black text-gray-900">
+                    Приглашение поставщика / представителя бренда
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Создает закрытый кабинет и персональную ссылку для установки пароля
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowPartnerInviteModal(false)}
+                  className="p-2 text-gray-400 hover:text-gray-700 rounded-xl hover:bg-gray-100 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4 text-xs max-h-[75vh] overflow-y-auto">
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setPartnerInviteForm((prev) => ({ ...prev, role: "brand_representative" }))}
+                    className={cn(
+                      "p-3 rounded-xl border text-left cursor-pointer transition-all",
+                      partnerInviteForm.role === "brand_representative"
+                        ? "border-blue-600 bg-blue-50/70 font-extrabold text-blue-950"
+                        : "border-gray-200 hover:bg-gray-50 text-gray-700"
+                    )}
+                  >
+                    <div>Представитель бренда / Завод</div>
+                    <div className="text-[10px] font-normal text-gray-500 mt-0.5">
+                      Прямой адрес mebel-plan.ru/бренд + каталог
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPartnerInviteForm((prev) => ({ ...prev, role: "dealer" }))}
+                    className={cn(
+                      "p-3 rounded-xl border text-left cursor-pointer transition-all",
+                      partnerInviteForm.role === "dealer"
+                        ? "border-blue-600 bg-blue-50/70 font-extrabold text-blue-950"
+                        : "border-gray-200 hover:bg-gray-50 text-gray-700"
+                    )}
+                  >
+                    <div>Официальный дилер / Поставщик</div>
+                    <div className="text-[10px] font-normal text-gray-500 mt-0.5">
+                      Мультибрендовый адрес mebel-plan.ru/partner/...
+                    </div>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block font-extrabold text-gray-700 mb-1">Название компании / Представительства *</label>
+                    <input
+                      type="text"
+                      value={partnerInviteForm.companyName}
+                      onChange={(e) => setPartnerInviteForm((prev) => ({ ...prev, companyName: e.target.value }))}
+                      placeholder="ООО Боярд / ТБМ-Урал"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 font-bold text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-extrabold text-gray-700 mb-1">E-mail для приглашения и входа *</label>
+                    <input
+                      type="email"
+                      value={partnerInviteForm.email}
+                      onChange={(e) => setPartnerInviteForm((prev) => ({ ...prev, email: e.target.value }))}
+                      placeholder="partner@company.ru"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 font-bold text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block font-extrabold text-gray-700 mb-1">Контактное лицо</label>
+                    <input
+                      type="text"
+                      value={partnerInviteForm.contactName}
+                      onChange={(e) => setPartnerInviteForm((prev) => ({ ...prev, contactName: e.target.value }))}
+                      placeholder="Иван Петров"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-extrabold text-gray-700 mb-1">Телефон</label>
+                    <input
+                      type="text"
+                      value={partnerInviteForm.phone}
+                      onChange={(e) => setPartnerInviteForm((prev) => ({ ...prev, phone: e.target.value }))}
+                      placeholder="+7 (999) 000-00-00"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-extrabold text-gray-700 mb-1">Город / Регион</label>
+                    <input
+                      type="text"
+                      value={partnerInviteForm.city}
+                      onChange={(e) => setPartnerInviteForm((prev) => ({ ...prev, city: e.target.value }))}
+                      placeholder="Москва / РФ"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-extrabold text-gray-700 mb-1.5">
+                    Назначить управляемые бренды (из системного каталога плитных материалов и фурнитуры)
+                  </label>
+                  <div className="flex flex-wrap gap-1.5 p-3 rounded-2xl bg-gray-50 border border-gray-200 max-h-36 overflow-y-auto">
+                    {availableSelectableBrands.map((bName) => {
+                      const active = partnerInviteForm.selectedBrands.includes(bName);
+                      return (
+                        <button
+                          key={bName}
+                          type="button"
+                          onClick={() => {
+                            setPartnerInviteForm((prev) => ({
+                              ...prev,
+                              selectedBrands: active
+                                ? prev.selectedBrands.filter((x) => x !== bName)
+                                : [...prev.selectedBrands, bName],
+                            }));
+                          }}
+                          className={cn(
+                            "px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                            active
+                              ? "bg-blue-600 text-white shadow-2xs"
+                              : "bg-white border border-gray-200 text-gray-700 hover:border-blue-400"
+                          )}
+                        >
+                          {bName}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <input
+                      type="text"
+                      value={partnerInviteForm.customBrandInput}
+                      onChange={(e) => setPartnerInviteForm((prev) => ({ ...prev, customBrandInput: e.target.value }))}
+                      placeholder="Или введите новый бренд (например, Makmart)..."
+                      className="flex-1 px-3 py-2 rounded-xl border border-gray-200"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const val = partnerInviteForm.customBrandInput.trim();
+                        if (!val) return;
+                        setPartnerInviteForm((prev) => ({
+                          ...prev,
+                          selectedBrands: Array.from(new Set([...prev.selectedBrands, val])),
+                          customBrandInput: "",
+                        }));
+                      }}
+                      className="px-3.5 py-2 rounded-xl bg-gray-900 text-white font-bold cursor-pointer"
+                    >
+                      + Добавить
+                    </button>
+                  </div>
+                </div>
+
+                {generatedPartnerInviteLink && (
+                  <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 space-y-2">
+                    <div className="font-extrabold text-emerald-950">
+                      Персональная ссылка-приглашение сформирована:
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-white border border-emerald-200 font-mono text-[11px] break-all">
+                      {generatedPartnerInviteLink}
+                    </div>
+                    <p className="text-[11px] text-emerald-800">
+                      Отправьте эту ссылку представителю бренда — перейдя по ней, он задаст свой пароль и попадет в кабинет партнера.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(generatedPartnerInviteLink);
+                        showToast("Ссылка-приглашение скопирована в буфер обмена!");
+                      }}
+                      className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold cursor-pointer"
+                    >
+                      Скопировать ссылку-приглашение
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-6 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-3">
+                <button
+                  onClick={() => setShowPartnerInviteModal(false)}
+                  className="px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-xs font-bold hover:bg-gray-100 cursor-pointer"
+                >
+                  Закрыть
+                </button>
+                <button
+                  onClick={handleGeneratePartnerInvite}
+                  disabled={partnerInviteGenerating}
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-2 cursor-pointer"
+                >
+                  <Send className="w-4 h-4" />
+                  <span>
+                    {partnerInviteGenerating ? "Формирование..." : "Создать кабинет и получить ссылку"}
+                  </span>
                 </button>
               </div>
             </div>

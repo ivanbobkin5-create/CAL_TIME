@@ -29,6 +29,10 @@ import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { smartDecodeFile } from "./utils/fileEncodingDetector";
 import { isB3DFile, parseB3DFile, parseB3DFromZip, combineB3DResults } from "./utils/b3dReader";
+import { DEFAULT_SYSTEM_BRANDS, SystemBrandItem, parseFormatDimensions } from "./constants/systemBrands";
+import { PartnerCabinetView } from "./components/Partner/PartnerCabinetView";
+
+let GLOBAL_SYSTEM_BRANDS: SystemBrandItem[] = [...DEFAULT_SYSTEM_BRANDS];
 
 const switchLayout = (text: string) => {
   if (!text) return ["", "", ""];
@@ -1972,6 +1976,30 @@ const getMaterialWorkTypeKey = (item: any, sheetConfig?: any): string => {
   if (type === "ХДФ") return "ХДФ";
   if (type === "ДВП") return "ДВП";
 
+  if (type === "ФАСАД") {
+    const brandName = (sheetConfig?.name || "").trim();
+    const sysBrand = GLOBAL_SYSTEM_BRANDS.find(
+      (b) => b.brand.toLowerCase() === brandName.toLowerCase(),
+    );
+    const brandType =
+      sysBrand?.type ||
+      (brandName && FACADE_BRANDS[brandName]
+        ? "МДФ"
+        : BRAND_TO_TYPE[brandName] || "ЛДСП");
+    const thStr = String(thickness);
+    if (brandType === "МДФ") {
+      if (thStr === "18") return "МДФ 18 мм";
+      if (thStr === "19") return "МДФ 19 мм";
+      if (thStr === "22") return "МДФ 22 мм";
+      return `МДФ ${thStr || "18"} мм`;
+    }
+    if (thStr === "10") return "ЛДСП 10 мм";
+    if (thStr === "16") return "ЛДСП 16 мм";
+    if (thStr === "22") return "ЛДСП 22 мм";
+    if (thStr === "25") return "ЛДСП 25 мм";
+    return `ЛДСП ${thStr || "16"} мм`;
+  }
+
   if (type === "ЛДСП") {
     const thStr = String(thickness);
     if (thStr === "10") return "ЛДСП 10 мм";
@@ -2042,6 +2070,35 @@ const ProductionView = ({
 }) => {
   const [manufacturerSettings, setManufacturerSettings] =
     React.useState<any>(null);
+  const [systemBrands, setSystemBrands] =
+    React.useState<SystemBrandItem[]>(GLOBAL_SYSTEM_BRANDS);
+  const [brandSearchQuery, setBrandSearchQuery] = React.useState("");
+  const [brandTypeFilter, setBrandTypeFilter] = React.useState<
+    "ALL" | "ЛДСП" | "МДФ" | "ХДФ"
+  >("ALL");
+  const [isBrandRequestModalOpen, setIsBrandRequestModalOpen] =
+    React.useState(false);
+  const [brandRequestForm, setBrandRequestForm] = React.useState({
+    brand: "",
+    type: "ЛДСП" as "ЛДСП" | "МДФ" | "ХДФ",
+    format: "2800x2070",
+    thicknesses: "16",
+    comment: "",
+  });
+  const [isSubmittingBrandRequest, setIsSubmittingBrandRequest] =
+    React.useState(false);
+
+  React.useEffect(() => {
+    fetch("/api/system/brands")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.brands && Array.isArray(data.brands) && data.brands.length > 0) {
+          GLOBAL_SYSTEM_BRANDS = data.brands;
+          setSystemBrands(data.brands);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   React.useEffect(() => {
     if (contractConfig.productionId) {
@@ -2095,32 +2152,27 @@ const ProductionView = ({
     }
   }, [companyType, productionFormat, setProductionFormat]);
 
-  const handleAddBrand = () => {
-    setOwnProductionConfig((prev) => ({
-      ...prev,
-      ldspBrands: [
-        ...prev.ldspBrands,
-        {
-          id: Math.random().toString(36).substr(2, 9),
-          brand: "",
-          format: "",
-          type: "ЛДСП",
-        },
-      ],
-    }));
-  };
-
-  const handleUpdateBrand = (
-    id: string,
-    field: "brand" | "format" | "type",
-    value: string,
-  ) => {
-    setOwnProductionConfig((prev) => ({
-      ...prev,
-      ldspBrands: prev.ldspBrands.map((b) =>
-        b.id === id ? { ...b, [field]: value } : b,
-      ),
-    }));
+  const handleSelectSystemBrand = (sysBrand: SystemBrandItem) => {
+    setOwnProductionConfig((prev) => {
+      const alreadyExists = (prev.ldspBrands || []).some(
+        (b) =>
+          b.brand.toLowerCase() === sysBrand.brand.toLowerCase() &&
+          (b.type || "ЛДСП") === sysBrand.type,
+      );
+      if (alreadyExists) return prev;
+      return {
+        ...prev,
+        ldspBrands: [
+          ...(prev.ldspBrands || []),
+          {
+            id: sysBrand.id || Math.random().toString(36).substr(2, 9),
+            brand: sysBrand.brand,
+            format: sysBrand.format || `${sysBrand.width}x${sysBrand.height}`,
+            type: sysBrand.type,
+          },
+        ],
+      };
+    });
   };
 
   const handleRemoveBrand = (id: string) => {
@@ -2128,6 +2180,77 @@ const ProductionView = ({
       ...prev,
       ldspBrands: prev.ldspBrands.filter((b) => b.id !== id),
     }));
+  };
+
+  const handleSubmitBrandRequest = async () => {
+    const cleanBrand = brandRequestForm.brand.trim();
+    if (!cleanBrand) {
+      showAlert("Внимание", "Укажите название бренда плиты");
+      return;
+    }
+    const { width, height } = parseFormatDimensions(brandRequestForm.format);
+    const thicknesses = brandRequestForm.thicknesses
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+
+    const myCompany = allCompanies.find((c) => c && c.id === companyId);
+    const companyName =
+      myCompany?.name ||
+      myCompany?.companyName ||
+      myCompany?.data?.name ||
+      "Производственная компания";
+    const userEmail =
+      (typeof window !== "undefined" && localStorage.getItem("auth_email")) ||
+      myCompany?.email ||
+      myCompany?.ownerEmail ||
+      "";
+
+    setIsSubmittingBrandRequest(true);
+    try {
+      const res = await fetch("/api/system/applications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: `brand_req_${Date.now()}`,
+          companyId: companyId || "unknown",
+          companyName,
+          userEmail,
+          type: "brand_request",
+          subject: `Заявка на добавление бренда: ${cleanBrand} (${brandRequestForm.type})`,
+          message: `Просим добавить в системный каталог бренд «${cleanBrand}», тип: ${brandRequestForm.type}, формат листа: ${width}x${height} мм, толщины: ${thicknesses.join(", ") || "16"} мм.${brandRequestForm.comment ? `\nКомментарий: ${brandRequestForm.comment}` : ""}`,
+          brandRequestData: {
+            brand: cleanBrand,
+            type: brandRequestForm.type,
+            format: `${width}x${height}`,
+            width,
+            height,
+            thicknesses: thicknesses.length > 0 ? thicknesses : ["16"],
+            comment: brandRequestForm.comment.trim(),
+          },
+        }),
+      });
+      if (res.ok) {
+        setIsBrandRequestModalOpen(false);
+        setBrandRequestForm({
+          brand: "",
+          type: "ЛДСП",
+          format: "2800x2070",
+          thicknesses: "16",
+          comment: "",
+        });
+        showAlert(
+          "Заявка отправлена",
+          `Заявка на добавление бренда «${cleanBrand}» отправлена суперадминистратору. После проверки и внесения параметров бренд станет доступен в вашем калькуляторе.`,
+        );
+      } else {
+        showAlert("Ошибка", "Не удалось отправить заявку. Попробуйте позже.");
+      }
+    } catch (e) {
+      showAlert("Ошибка", "Не удалось отправить заявку.");
+    } finally {
+      setIsSubmittingBrandRequest(false);
+    }
   };
 
   const availableProductions = useMemo(() => {
@@ -2268,85 +2391,359 @@ const ProductionView = ({
                 />
               </div>
 
-              <div className="space-y-6">
+              <div className="space-y-6 mt-6">
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    Настройки формата листов
-                  </label>
-                  <p className="text-sm text-gray-500 mb-3">
-                    Укажите бренды, с которыми вы работаете, типы материалов и
-                    форматы листов
-                  </p>
-
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-[1fr_120px_1fr_auto] gap-4 mb-2 px-2">
-                      <div className="text-sm font-medium text-gray-500">
-                        Бренд
-                      </div>
-                      <div className="text-sm font-medium text-gray-500">
-                        Тип
-                      </div>
-                      <div className="text-sm font-medium text-gray-500">
-                        Формат листа (мм)
-                      </div>
-                      <div className="w-10"></div>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                    <div>
+                      <label className="block text-sm font-bold text-gray-800">
+                        Бренды плит и форматы листов компании
+                      </label>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Выберите бренды из единого системного каталога. Менеджеры вашей компании в Калькуляторе смогут работать только с выбранными здесь брендами.
+                      </p>
                     </div>
-
-                    {ownProductionConfig.ldspBrands.map((brand) => (
-                      <div
-                        key={brand.id}
-                        className="grid grid-cols-[1fr_120px_1fr_auto] gap-4 items-center"
-                      >
-                        <input
-                          type="text"
-                          value={brand.brand || ""}
-                          onChange={(e) =>
-                            handleUpdateBrand(brand.id, "brand", e.target.value)
-                          }
-                          placeholder="Например, Egger"
-                          className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                        />
-                        <select
-                          value={brand.type || "ЛДСП"}
-                          onChange={(e) =>
-                            handleUpdateBrand(brand.id, "type", e.target.value)
-                          }
-                          className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white text-sm"
-                        >
-                          <option value="ЛДСП">ЛДСП</option>
-                          <option value="МДФ">МДФ</option>
-                          <option value="ХДФ">ХДФ</option>
-                        </select>
-                        <input
-                          type="text"
-                          value={brand.format || ""}
-                          onChange={(e) =>
-                            handleUpdateBrand(
-                              brand.id,
-                              "format",
-                              e.target.value,
-                            )
-                          }
-                          placeholder="Например, 2800x2070"
-                          className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                        />
-                        <button
-                          onClick={() => handleRemoveBrand(brand.id)}
-                          className="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
-                      </div>
-                    ))}
-
                     <button
-                      onClick={handleAddBrand}
-                      className="flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700 mt-2"
+                      type="button"
+                      onClick={() => {
+                        setBrandRequestForm((prev) => ({
+                          ...prev,
+                          brand: brandSearchQuery.trim() || prev.brand,
+                        }));
+                        setIsBrandRequestModalOpen(true);
+                      }}
+                      className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer"
                     >
-                      <Plus className="w-4 h-4" />
-                      Добавить бренд
+                      <Plus className="w-3.5 h-3.5" />
+                      В системе нет нужного мне бренда
                     </button>
                   </div>
+
+                  {/* Поисковое окно выбора брендов из системного каталога */}
+                  <div className="p-4 bg-gray-50 border border-gray-200 rounded-2xl space-y-3 mb-5">
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <div className="relative flex-1">
+                        <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={brandSearchQuery}
+                          onChange={(e) => setBrandSearchQuery(e.target.value)}
+                          placeholder="Поиск бренда в каталоге системы (например: Egger, Lamarty, AGT)..."
+                          className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                      <div className="flex gap-1.5 bg-white p-1 rounded-xl border border-gray-200 shrink-0">
+                        {(["ALL", "ЛДСП", "МДФ", "ХДФ"] as const).map((t) => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => setBrandTypeFilter(t)}
+                            className={cn(
+                              "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                              brandTypeFilter === t
+                                ? "bg-blue-600 text-white shadow-xs"
+                                : "text-gray-600 hover:bg-gray-100",
+                            )}
+                          >
+                            {t === "ALL" ? "Все" : t}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {(() => {
+                      const q = brandSearchQuery.trim().toLowerCase();
+                      const matchingBrands = systemBrands.filter((sb) => {
+                        if (brandTypeFilter !== "ALL" && sb.type !== brandTypeFilter) return false;
+                        if (!q) return true;
+                        return (
+                          sb.brand.toLowerCase().includes(q) ||
+                          sb.type.toLowerCase().includes(q) ||
+                          sb.format.toLowerCase().includes(q)
+                        );
+                      });
+
+                      if (matchingBrands.length === 0) {
+                        return (
+                          <div className="p-6 bg-white rounded-xl border border-dashed border-gray-300 text-center space-y-3">
+                            <p className="text-sm text-gray-600 font-medium">
+                              Бренд <strong>«{brandSearchQuery}»</strong> не найден в системном каталоге.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBrandRequestForm((prev) => ({
+                                  ...prev,
+                                  brand: brandSearchQuery.trim(),
+                                }));
+                                setIsBrandRequestModalOpen(true);
+                              }}
+                              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm transition-colors cursor-pointer"
+                            >
+                              <Plus className="w-4 h-4" />
+                              В системе нет нужного мне бренда — отправить заявку
+                            </button>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="max-h-60 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 pr-1">
+                          {matchingBrands.map((sb) => {
+                            const isSelected = (ownProductionConfig.ldspBrands || []).some(
+                              (b) =>
+                                b.brand.toLowerCase() === sb.brand.toLowerCase() &&
+                                (b.type || "ЛДСП") === sb.type,
+                            );
+                            return (
+                              <div
+                                key={sb.id}
+                                className={cn(
+                                  "flex items-center justify-between p-2.5 rounded-xl border text-left transition-all",
+                                  isSelected
+                                    ? "bg-blue-50/70 border-blue-200"
+                                    : "bg-white border-gray-200 hover:border-blue-300",
+                                )}
+                              >
+                                <div className="min-w-0 pr-2">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-bold text-sm text-gray-900 truncate">
+                                      {sb.brand}
+                                    </span>
+                                    <span
+                                      className={cn(
+                                        "px-1.5 py-0.5 rounded text-[10px] font-extrabold uppercase",
+                                        sb.type === "ЛДСП"
+                                          ? "bg-blue-100 text-blue-700"
+                                          : sb.type === "МДФ"
+                                            ? "bg-purple-100 text-purple-700"
+                                            : "bg-amber-100 text-amber-700",
+                                      )}
+                                    >
+                                      {sb.type}
+                                    </span>
+                                  </div>
+                                  <div className="text-[11px] text-gray-500 mt-0.5">
+                                    Лист: {sb.format} мм
+                                    {sb.thicknesses?.length
+                                      ? ` • ${sb.thicknesses.join(", ")} мм`
+                                      : ""}
+                                  </div>
+                                </div>
+                                {isSelected ? (
+                                  <span className="px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-[11px] font-bold shrink-0">
+                                    ✓ Добавлен
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSelectSystemBrand(sb)}
+                                    className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shrink-0 transition-colors cursor-pointer"
+                                  >
+                                    + Выбрать
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Список активных брендов компании */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between px-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-gray-400">
+                        Активные бренды вашего производства ({ownProductionConfig.ldspBrands?.length || 0})
+                      </span>
+                    </div>
+
+                    {(!ownProductionConfig.ldspBrands || ownProductionConfig.ldspBrands.length === 0) ? (
+                      <div className="p-6 text-center bg-gray-50 border border-gray-200 rounded-2xl text-sm text-gray-500">
+                        Вы еще не выбрали ни одного бренда. Выберите бренды из каталога выше.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                        {ownProductionConfig.ldspBrands.map((brand) => (
+                          <div
+                            key={brand.id}
+                            className="flex items-center justify-between px-4 py-3 bg-white border border-gray-200 rounded-xl shadow-2xs"
+                          >
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-gray-900 text-sm">
+                                  {brand.brand}
+                                </span>
+                                <span
+                                  className={cn(
+                                    "px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase",
+                                    brand.type === "МДФ"
+                                      ? "bg-purple-50 text-purple-700 border border-purple-200"
+                                      : brand.type === "ХДФ"
+                                        ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                        : "bg-blue-50 text-blue-700 border border-blue-200",
+                                  )}
+                                >
+                                  {brand.type || "ЛДСП"}
+                                </span>
+                              </div>
+                              <div className="text-xs text-gray-500 mt-0.5 font-medium">
+                                Формат листа: <span className="text-gray-700 font-bold">{brand.format || "2800x2070"}</span> мм
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveBrand(brand.id)}
+                              title="Убрать бренд из списка компании"
+                              className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Модальное окно отправки заявки на добавление бренда суперадминистратору */}
+                  {isBrandRequestModalOpen && (
+                    <div className="fixed inset-0 z-[120] bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+                      <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-gray-100 space-y-4">
+                        <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                          <div>
+                            <h4 className="text-lg font-bold text-gray-900">
+                              Заявка на добавление бренда
+                            </h4>
+                            <p className="text-xs text-gray-500">
+                              Суперадминистратор проверит материал и внесет его в общий каталог системы
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setIsBrandRequestModalOpen(false)}
+                            className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg"
+                          >
+                            <X className="w-5 h-5" />
+                          </button>
+                        </div>
+
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
+                              Название бренда / материала *
+                            </label>
+                            <input
+                              type="text"
+                              value={brandRequestForm.brand}
+                              onChange={(e) =>
+                                setBrandRequestForm((prev) => ({
+                                  ...prev,
+                                  brand: e.target.value,
+                                }))
+                              }
+                              placeholder="Например: ЧФМК, Сыктывкар, Alvic..."
+                              className="w-full px-3.5 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
+                                Тип материала
+                              </label>
+                              <select
+                                value={brandRequestForm.type}
+                                onChange={(e) =>
+                                  setBrandRequestForm((prev) => ({
+                                    ...prev,
+                                    type: e.target.value as "ЛДСП" | "МДФ" | "ХДФ",
+                                  }))
+                                }
+                                className="w-full px-3.5 py-2 border border-gray-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                              >
+                                <option value="ЛДСП">ЛДСП</option>
+                                <option value="МДФ">МДФ (Фасадные плиты)</option>
+                                <option value="ХДФ">ХДФ</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
+                                Формат листа (Д×Ш, мм)
+                              </label>
+                              <input
+                                type="text"
+                                value={brandRequestForm.format}
+                                onChange={(e) =>
+                                  setBrandRequestForm((prev) => ({
+                                    ...prev,
+                                    format: e.target.value,
+                                  }))
+                                }
+                                placeholder="2800x2070"
+                                className="w-full px-3.5 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
+                              Толщины плит (мм, через запятую)
+                            </label>
+                            <input
+                              type="text"
+                              value={brandRequestForm.thicknesses}
+                              onChange={(e) =>
+                                setBrandRequestForm((prev) => ({
+                                  ...prev,
+                                  thicknesses: e.target.value,
+                                }))
+                              }
+                              placeholder="10, 16, 22, 25"
+                              className="w-full px-3.5 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
+                              Комментарий (необязательно)
+                            </label>
+                            <textarea
+                              rows={2}
+                              value={brandRequestForm.comment}
+                              onChange={(e) =>
+                                setBrandRequestForm((prev) => ({
+                                  ...prev,
+                                  comment: e.target.value,
+                                }))
+                              }
+                              placeholder="Ссылка на сайт производителя или дополнительная информация..."
+                              className="w-full px-3.5 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsBrandRequestModalOpen(false)}
+                            className="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+                          >
+                            Отмена
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isSubmittingBrandRequest}
+                            onClick={handleSubmitBrandRequest}
+                            className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl shadow-sm transition-colors cursor-pointer"
+                          >
+                            {isSubmittingBrandRequest
+                              ? "Отправка..."
+                              : "Отправить заявку"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -7312,9 +7709,13 @@ const CalculatorView = ({
                                   
                                   const lkItem = results[lk];
                                   const sameType = lkItem.type === item.type;
-                                  const sameThickness = lkItem.thickness === item.thickness;
-                                  const sameColor = lkItem.color?.trim().toLowerCase() === item.color?.trim().toLowerCase();
-                                  const sameDecor = selectedDecor[lk] && selectedDecor[key] && selectedDecor[lk] === selectedDecor[key];
+                                  const sameThickness = String(lkItem.thickness) === String(item.thickness);
+                                  const normStr = (s?: string) =>
+                                    (s || "").replace(/\|/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+                                  const sameColor = normStr(lkItem.color) !== "" && normStr(lkItem.color) === normStr(item.color);
+                                  const sameDecor =
+                                    normStr(selectedDecor[lk]) !== "" &&
+                                    normStr(selectedDecor[lk]) === normStr(selectedDecor[key]);
                                   
                                   // Suggest merge if colors are same OR if user selected same decor
                                   return sameThickness && sameType && (sameColor || sameDecor);
@@ -7400,17 +7801,11 @@ const CalculatorView = ({
                                     (b: any) => b.brand === e.target.value,
                                   );
                                   if (brand) {
-                                    const cleanFormat = brand.format
-                                      .toLowerCase()
-                                      .replace(/\s/g, "")
-                                      .replace("х", "x");
-                                    const [w, h] = cleanFormat
-                                      .split("x")
-                                      .map((v: string) => parseInt(v));
+                                    const { width: w, height: h } = parseFormatDimensions(brand.format);
                                     updateSheetConfig(key, {
                                       name: brand.brand,
-                                      width: isNaN(w) ? 2800 : w,
-                                      height: isNaN(h) ? 2070 : h,
+                                      width: w,
+                                      height: h,
                                     });
 
                                     const available = getAvailableThicknessesForBrand(brand.brand);
@@ -7421,17 +7816,35 @@ const CalculatorView = ({
                                       }));
                                     }
                                   } else {
-                                    const legacyBrand = LDSP_BRANDS.find((b) =>
-                                      b.name.includes(e.target.value),
+                                    const sysBrand = GLOBAL_SYSTEM_BRANDS.find(
+                                      (sb) => sb.brand.toLowerCase() === e.target.value.toLowerCase(),
                                     );
-                                    if (legacyBrand) {
-                                      updateSheetConfig(key, legacyBrand);
-                                      const available = getAvailableThicknessesForBrand(e.target.value);
+                                    if (sysBrand) {
+                                      updateSheetConfig(key, {
+                                        name: sysBrand.brand,
+                                        width: sysBrand.width,
+                                        height: sysBrand.height,
+                                      });
+                                      const available = getAvailableThicknessesForBrand(sysBrand.brand);
                                       if (available.length > 0) {
                                         setEdgeThickness((prev) => ({
                                           ...prev,
                                           [key]: normThicknessForCalc(available[0]),
                                         }));
+                                      }
+                                    } else {
+                                      const legacyBrand = LDSP_BRANDS.find((b) =>
+                                        b.name.includes(e.target.value),
+                                      );
+                                      if (legacyBrand) {
+                                        updateSheetConfig(key, legacyBrand);
+                                        const available = getAvailableThicknessesForBrand(e.target.value);
+                                        if (available.length > 0) {
+                                          setEdgeThickness((prev) => ({
+                                            ...prev,
+                                            [key]: normThicknessForCalc(available[0]),
+                                          }));
+                                        }
                                       }
                                     }
                                   }
@@ -7465,44 +7878,38 @@ const CalculatorView = ({
                                         ? productionSettings.production.ldspBrands
                                         : ownProductionConfig.ldspBrands) || [];
                                     
-                                    const results: any[] = [];
-                                    const seen = new Set();
+                                    const resultsList: any[] = [];
+                                    const seen = new Set<string>();
+                                    const iType = (item.type || "").trim().toUpperCase();
                                     
-                                    // 1. First show brands from configuration (they have correct types)
+                                    // 1. Show brands allowed in company's Production settings
                                     configBrands.forEach((b: any) => {
-                                      // Normalize type for comparison
-                                      const bType = (b.type || "").trim().toUpperCase();
-                                      const iType = (item.type || "").trim().toUpperCase();
-                                      
-                                      if (bType === iType && !seen.has(b.brand)) {
-                                        results.push(
+                                      const bType = (b.type || "ЛДСП").trim().toUpperCase();
+                                      if (b.brand && bType === iType && !seen.has(b.brand.toLowerCase())) {
+                                        resultsList.push(
                                           <option key={`config-${b.brand}`} value={b.brand}>
-                                            {b.brand}
+                                            {b.brand} {b.format ? `(${b.format})` : ""}
                                           </option>
                                         );
-                                        seen.add(b.brand);
+                                        seen.add(b.brand.toLowerCase());
                                       }
                                     });
                                     
-                                    // 2. Then show legacy brands, but filter by type to avoid mixing LDSP/MDF
-                                    LDSP_BRANDS.forEach((b: any) => {
-                                      const brandBaseName = b.name.split(" ")[0];
-                                      
-                                      // Use our type map
-                                      const bType = BRAND_TO_TYPE[brandBaseName] || "ЛДСП";
-                                      
-                                      const iType = (item.type || "").trim().toUpperCase();
-                                      if (bType.toUpperCase() === iType && !seen.has(brandBaseName)) {
-                                        results.push(
-                                          <option key={`legacy-${b.name}`} value={b.name}>
-                                            {brandBaseName}
-                                          </option>
-                                        );
-                                        seen.add(brandBaseName);
-                                      }
-                                    });
+                                    // 2. Only fall back to system catalog if company has no configured brands for this type
+                                    if (resultsList.length === 0) {
+                                      GLOBAL_SYSTEM_BRANDS.forEach((sb) => {
+                                        if (sb.type.toUpperCase() === iType && !seen.has(sb.brand.toLowerCase())) {
+                                          resultsList.push(
+                                            <option key={`sys-${sb.id}`} value={sb.brand}>
+                                              {sb.brand} ({sb.format})
+                                            </option>
+                                          );
+                                          seen.add(sb.brand.toLowerCase());
+                                        }
+                                      });
+                                    }
                                     
-                                    return results;
+                                    return resultsList;
                                   })()}
                                 </>
                               )}
@@ -7687,39 +8094,34 @@ const CalculatorView = ({
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               <div>
                                 <label className="block text-xs font-bold text-gray-400 uppercase mb-2">
-                                  Бренд плиты
+                                  Бренд плиты (ЛДСП / МДФ)
                                 </label>
                                 <select
                                   value={(() => {
                                     const curName = sheetConfigs[key]?.name || "";
                                     if (!curName) return "";
-                                    if (FACADE_BRANDS[curName]) return curName;
                                     const configToUse =
                                       productionFormat === "contract" &&
                                       productionSettings?.production
                                         ? productionSettings.production
                                         : ownProductionConfig;
                                     const inCustom = configToUse?.ldspBrands?.find(
-                                      (b: any) => b.brand === curName,
+                                      (b: any) =>
+                                        b.brand?.toLowerCase() === curName.toLowerCase(),
                                     );
-                                    if (inCustom) return curName;
+                                    if (inCustom) return inCustom.brand;
+                                    const inSys = GLOBAL_SYSTEM_BRANDS.find(
+                                      (b) =>
+                                        b.brand.toLowerCase() === curName.toLowerCase(),
+                                    );
+                                    if (inSys) return inSys.brand;
+                                    if (FACADE_BRANDS[curName]) return curName;
                                     const inLdsp = LDSP_BRANDS.find(
                                       (b) =>
                                         b.name === curName ||
                                         b.name.split(" ")[0] === curName,
                                     );
                                     if (inLdsp) return inLdsp.name.split(" ")[0];
-                                    const matchedFacade = Object.keys(
-                                      FACADE_BRANDS,
-                                    ).find(
-                                      (k) =>
-                                        k.toLowerCase() ===
-                                          curName.toLowerCase() ||
-                                        curName
-                                          .toLowerCase()
-                                          .includes(k.toLowerCase()),
-                                    );
-                                    if (matchedFacade) return matchedFacade;
                                     return curName;
                                   })()}
                                   onChange={(e) => {
@@ -7734,20 +8136,29 @@ const CalculatorView = ({
 
                                     const customBrand =
                                       configToUse?.ldspBrands?.find(
-                                        (b: any) => b.brand === val,
+                                        (b: any) =>
+                                          b.brand?.toLowerCase() === val.toLowerCase(),
                                       );
                                     if (customBrand && customBrand.format) {
-                                      const [w, h] = customBrand.format
-                                        .split("x")
-                                        .map((n: string) => parseInt(n));
-                                      if (w && h) {
-                                        updateSheetConfig(key, {
-                                          name: customBrand.brand,
-                                          width: w,
-                                          height: h,
-                                        });
-                                        return;
-                                      }
+                                      const { width: w, height: h } = parseFormatDimensions(customBrand.format);
+                                      updateSheetConfig(key, {
+                                        name: customBrand.brand,
+                                        width: w,
+                                        height: h,
+                                      });
+                                      return;
+                                    }
+
+                                    const sysBrand = GLOBAL_SYSTEM_BRANDS.find(
+                                      (b) => b.brand.toLowerCase() === val.toLowerCase(),
+                                    );
+                                    if (sysBrand) {
+                                      updateSheetConfig(key, {
+                                        name: sysBrand.brand,
+                                        width: sysBrand.width,
+                                        height: sysBrand.height,
+                                      });
+                                      return;
                                     }
 
                                     const facadeBrand = FACADE_BRANDS[val];
@@ -7783,73 +8194,68 @@ const CalculatorView = ({
                                 >
                                   <option value="">Выберите бренд...</option>
                                   {(() => {
-                                    const seen = new Set();
-                                    const results: any[] = [];
                                     const configToUse =
                                       productionFormat === "contract" &&
                                       productionSettings?.production
                                         ? productionSettings.production
                                         : ownProductionConfig;
 
-                                    // 1. Facade specialized brands
-                                    Object.entries(FACADE_BRANDS).forEach(
-                                      ([b, cfg]) => {
-                                        if (!seen.has(b.toLowerCase())) {
-                                          results.push(
-                                            <option
-                                              key={`facade-${b}`}
-                                              value={b}
-                                            >
-                                              {b} ({cfg.width}x{cfg.height})
-                                            </option>,
-                                          );
-                                          seen.add(b.toLowerCase());
-                                        }
-                                      },
-                                    );
+                                    const hasCompanyBrands =
+                                      Array.isArray(configToUse?.ldspBrands) &&
+                                      configToUse.ldspBrands.length > 0;
 
-                                    // 2. Custom brands from settings
-                                    if (Array.isArray(configToUse?.ldspBrands)) {
-                                      configToUse.ldspBrands.forEach(
-                                        (b: any) => {
-                                          if (
-                                            b.brand &&
-                                            !seen.has(b.brand.toLowerCase())
-                                          ) {
-                                            results.push(
-                                              <option
-                                                key={`custom-${b.brand}`}
-                                                value={b.brand}
-                                              >
-                                                {b.brand}{" "}
-                                                {b.format
-                                                  ? `(${b.format})`
-                                                  : ""}
-                                              </option>,
-                                            );
-                                            seen.add(b.brand.toLowerCase());
-                                          }
-                                        },
-                                      );
-                                    }
+                                    const sourceList: {
+                                      brand: string;
+                                      format: string;
+                                      type: string;
+                                    }[] = hasCompanyBrands
+                                      ? configToUse.ldspBrands.map((b: any) => ({
+                                          brand: b.brand,
+                                          format: b.format || "2800x2070",
+                                          type: (b.type || "ЛДСП").toUpperCase(),
+                                        }))
+                                      : GLOBAL_SYSTEM_BRANDS.map((sb) => ({
+                                          brand: sb.brand,
+                                          format: sb.format,
+                                          type: sb.type.toUpperCase(),
+                                        }));
 
-                                    // 3. Standard LDSP brands
-                                    LDSP_BRANDS.forEach((b) => {
-                                      const shortName = b.name.split(" ")[0];
-                                      if (!seen.has(shortName.toLowerCase())) {
-                                        results.push(
-                                          <option
-                                            key={`ldsp-${b.name}`}
-                                            value={shortName}
-                                          >
-                                            {b.name}
+                                    const seen = new Set<string>();
+                                    const ldspOptions: React.ReactNode[] = [];
+                                    const mdfOptions: React.ReactNode[] = [];
+
+                                    sourceList.forEach((b) => {
+                                      if (!b.brand || seen.has(b.brand.toLowerCase())) return;
+                                      seen.add(b.brand.toLowerCase());
+                                      if (b.type === "ЛДСП") {
+                                        ldspOptions.push(
+                                          <option key={`fac-ldsp-${b.brand}`} value={b.brand}>
+                                            {b.brand} ({b.format}) — ЛДСП
                                           </option>,
                                         );
-                                        seen.add(shortName.toLowerCase());
+                                      } else if (b.type === "МДФ") {
+                                        mdfOptions.push(
+                                          <option key={`fac-mdf-${b.brand}`} value={b.brand}>
+                                            {b.brand} ({b.format}) — МДФ
+                                          </option>,
+                                        );
                                       }
                                     });
 
-                                    return results;
+                                    return (
+                                      <>
+                                        {ldspOptions.length > 0 && (
+                                          <optgroup label="ЛДСП (плиты корпуса и фасадов)">
+                                            {ldspOptions}
+                                          </optgroup>
+                                        )}
+                                        {mdfOptions.length > 0 && (
+                                          <optgroup label="Фасадные плиты (МДФ)">
+                                            {mdfOptions}
+                                          </optgroup>
+                                        )}
+                                      </>
+                                    );
                                   })()}
                                 </select>
                                 <div className="mt-2 flex items-center gap-1">
@@ -7912,8 +8318,8 @@ const CalculatorView = ({
                                       setFacadeSearchQuery(val);
 
                                       // Auto-detect brand from manual typing
-                                      const brandsToCheck = ["Egger", "Kronospan", "Lamarty", "Nordeco", "Uvadrev", "AGT", "Evosoft", "Evogloss", "Arkopa"];
-                                      const foundBrand = brandsToCheck.find(b => val.toLowerCase().includes(b.toLowerCase()));
+                                      const allBrandNames = GLOBAL_SYSTEM_BRANDS.map((sb) => sb.brand);
+                                      const foundBrand = allBrandNames.find(b => val.toLowerCase().includes(b.toLowerCase()));
                                       if (foundBrand) {
                                         const configToUse = productionFormat === "contract" && productionSettings?.production
                                           ? productionSettings.production
@@ -7923,12 +8329,17 @@ const CalculatorView = ({
                                         
                                         let brandConfig: any = null;
                                         if (customBrand && customBrand.format) {
-                                          const [w, h] = customBrand.format.split("x").map((n: string) => parseInt(n));
-                                          if (w && h) brandConfig = { name: customBrand.brand, width: w, height: h };
+                                          const { width: w, height: h } = parseFormatDimensions(customBrand.format);
+                                          brandConfig = { name: customBrand.brand, width: w, height: h };
                                         }
                                         
                                         if (!brandConfig) {
-                                          brandConfig = findBrandConfig(foundBrand);
+                                          const sysB = GLOBAL_SYSTEM_BRANDS.find((sb) => sb.brand.toLowerCase() === foundBrand.toLowerCase());
+                                          if (sysB) {
+                                            brandConfig = { name: sysB.brand, width: sysB.width, height: sysB.height };
+                                          } else {
+                                            brandConfig = findBrandConfig(foundBrand);
+                                          }
                                         }
 
                                         if (brandConfig) updateSheetConfig(key, brandConfig);
@@ -7976,7 +8387,8 @@ const CalculatorView = ({
                                               const customBrand =
                                                 configToUse?.ldspBrands?.find(
                                                   (b: any) =>
-                                                    d.brand.includes(b.brand),
+                                                    d.brand.toLowerCase().includes(b.brand.toLowerCase()) ||
+                                                    b.brand.toLowerCase().includes(d.brand.toLowerCase()),
                                                 );
 
                                               let brandConfig: any = null;
@@ -7984,36 +8396,39 @@ const CalculatorView = ({
                                                 customBrand &&
                                                 customBrand.format
                                               ) {
-                                                const [w, h] =
-                                                  customBrand.format
-                                                    .split("x")
-                                                    .map((n: string) =>
-                                                      parseInt(n),
-                                                    );
-                                                if (w && h) {
-                                                  brandConfig = {
-                                                    name: customBrand.brand,
-                                                    width: w,
-                                                    height: h,
-                                                  };
-                                                }
+                                                const { width: w, height: h } = parseFormatDimensions(customBrand.format);
+                                                brandConfig = {
+                                                  name: customBrand.brand,
+                                                  width: w,
+                                                  height: h,
+                                                };
                                               }
 
                                               if (!brandConfig) {
-                                                brandConfig = findBrandConfig(d.brand);
+                                                const sysB = GLOBAL_SYSTEM_BRANDS.find(
+                                                  (sb) => sb.brand.toLowerCase() === d.brand.toLowerCase(),
+                                                );
+                                                if (sysB) {
+                                                  brandConfig = {
+                                                    name: sysB.brand,
+                                                    width: sysB.width,
+                                                    height: sysB.height,
+                                                  };
+                                                } else {
+                                                  brandConfig = findBrandConfig(d.brand);
+                                                }
                                               }
 
-                                              
-                                               const currentBrandName = sheetConfigs[key]?.name;
-                                               const isCompatible = currentBrandName && (
-                                                 currentBrandName.toLowerCase().includes(d.brand.toLowerCase()) ||
-                                                 d.brand.toLowerCase().includes(currentBrandName.toLowerCase())
-                                               );
-                                               if (brandConfig && !isCompatible)
-                                                 updateSheetConfig(
-                                                   key,
-                                                   brandConfig,
-                                                 );
+                                              const currentBrandName = sheetConfigs[key]?.name;
+                                              const isCompatible = currentBrandName && (
+                                                currentBrandName.toLowerCase().includes(d.brand.toLowerCase()) ||
+                                                d.brand.toLowerCase().includes(currentBrandName.toLowerCase())
+                                              );
+                                              if (brandConfig && !isCompatible)
+                                                updateSheetConfig(
+                                                  key,
+                                                  brandConfig,
+                                                );
 
                                               // Auto set edge decor for facades
                                               setEdgeDecor((prev) => ({
@@ -8038,15 +8453,37 @@ const CalculatorView = ({
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               <div>
                                 <label className="block text-xs font-bold text-gray-400 uppercase mb-2">
-                                  Толщина кромки
+                                  Толщина кромки фасада
                                 </label>
-                                <div className="p-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600 font-medium">
-                                  1.0 мм
-                                </div>
+                                <select
+                                  value={edgeThickness[key] || "1.0"}
+                                  onChange={(e) =>
+                                    setEdgeThickness((prev) => ({
+                                      ...prev,
+                                      [key]: e.target.value,
+                                    }))
+                                  }
+                                  className="w-full p-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white font-bold"
+                                >
+                                  {(() => {
+                                    const brandName = sheetConfigs[key]?.name || "";
+                                    const available = getAvailableThicknessesForBrand(brandName);
+                                    const finalThicknesses = available.length > 0 ? available : ["0.4", "0.8", "1.0", "2.0"];
+                                    const withDefault = Array.from(new Set([...finalThicknesses, "1.0"]));
+                                    return withDefault.map((t) => {
+                                      const calcVal = normThicknessForCalc(t);
+                                      return (
+                                        <option key={t} value={calcVal}>
+                                          {t === "1" || t === "1.0" ? "1.0" : t === "2" || t === "2.0" ? "2.0" : t} мм
+                                        </option>
+                                      );
+                                    });
+                                  })()}
+                                </select>
                               </div>
                               <div>
                                 <label className="block text-xs font-bold text-gray-400 uppercase mb-2">
-                                  Декор кромки
+                                  Декор кромки фасада
                                 </label>
                                 <input
                                   type="text"
@@ -8065,9 +8502,9 @@ const CalculatorView = ({
                           </div>
                         )}
 
-                        {/* Merge Logic */}
+                        {/* Merge Logic for Sheet Facades (including LDSP facades matching LDSP body) */}
                         {(facadeType[key] || "sheet") === "sheet" &&
-                          selectedDecor[key] && (
+                          (selectedDecor[key] || item.color) && (
                             <div className="pt-2">
                               {Object.keys(results)
                                 .filter((lk) => {
@@ -8076,31 +8513,64 @@ const CalculatorView = ({
                                   if (mergedMaterials[lk]) return false;
 
                                   const lkItem = results[lk];
-                                  const sameThickness = lkItem.thickness === item.thickness;
-                                  const sameDecor = selectedDecor[lk] && selectedDecor[key] && selectedDecor[lk] === selectedDecor[key];
-                                  const compatibleType = lkItem.type === "ЛДСП" || lkItem.type === "МДФ" || lkItem.type === "Фасад";
+                                  const sameThickness = String(lkItem.thickness) === String(item.thickness);
+                                  const normStr = (s?: string) =>
+                                    (s || "").replace(/\|/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+                                  const facDecorNorm = normStr(selectedDecor[key] || item.color);
+                                  const lkDecorNorm = normStr(selectedDecor[lk] || lkItem.color);
+                                  const sameDecor = facDecorNorm !== "" && facDecorNorm === lkDecorNorm;
+                                  const compatibleType =
+                                    lkItem.type === "ЛДСП" ||
+                                    lkItem.type === "МДФ" ||
+                                    lkItem.type === "Фасад";
 
                                   return sameThickness && sameDecor && compatibleType;
                                 })
                                 .map((lk) => (
                                   <div
                                     key={lk}
-                                    className="flex items-center justify-between p-3 bg-blue-50 rounded-xl border border-blue-100 mb-4"
+                                    className={cn(
+                                      "flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border mb-3",
+                                      mergedMaterials[key] === lk
+                                        ? "bg-emerald-50 border-emerald-200"
+                                        : "bg-blue-50 border-blue-200",
+                                    )}
                                   >
-                                    <div className="flex items-center gap-2 text-sm text-blue-900">
-                                      <Combine className="w-4 h-4 text-blue-600" />
-                                      <span>
-                                        Декор совпадает с материалом{" "}
-                                        {results[lk].type === "Фасад"
-                                          ? "другого фасада"
-                                          : results[lk].type === "ЛДСП"
-                                            ? "корпуса (ЛДСП)"
-                                            : "плиты (МДФ)"}{" "}
-                                        <strong>"{results[lk].color || results[lk].name}"</strong> ({results[lk].thickness} мм).
-                                        Объединить в один раскрой?
-                                      </span>
+                                    <div className="flex items-start gap-2.5 text-sm">
+                                      <Combine
+                                        className={cn(
+                                          "w-4 h-4 mt-0.5 shrink-0",
+                                          mergedMaterials[key] === lk
+                                            ? "text-emerald-600"
+                                            : "text-blue-600",
+                                        )}
+                                      />
+                                      <div className={mergedMaterials[key] === lk ? "text-emerald-900" : "text-blue-900"}>
+                                        {mergedMaterials[key] === lk ? (
+                                          <>
+                                            <span className="font-bold">Раскрой фасадов объединен с ЛДСП корпуса</span>{" "}
+                                            <strong>«{selectedDecor[lk] || results[lk].color || results[lk].name}»</strong>.
+                                            <div className="text-xs text-emerald-700 mt-0.5">
+                                              Листы считаются в общем раскрое ЛДСП. В спецификации проекта сохраняется информация о фасадах («{selectedDecor[key] || item.color}»), а кромка фасадов выводится отдельной строкой с пометкой «(для Фасадов)».
+                                            </div>
+                                          </>
+                                        ) : (
+                                          <>
+                                            Бренд и декор совпадают с материалом{" "}
+                                            {results[lk].type === "Фасад"
+                                              ? "другого фасада"
+                                              : results[lk].type === "ЛДСП"
+                                                ? "корпуса (ЛДСП)"
+                                                : "плиты (МДФ)"}{" "}
+                                            <strong>«{selectedDecor[lk] || results[lk].color || results[lk].name}»</strong> ({results[lk].thickness} мм).
+                                            <div className="text-xs text-blue-700 mt-0.5">
+                                              Объединить раскрой и считать всё как ЛДСП (с сохранением фасадов в спецификации и отдельной кромкой для фасадов)?
+                                            </div>
+                                          </>
+                                        )}
+                                      </div>
                                     </div>
-                                    <div className="flex gap-2">
+                                    <div className="flex gap-2 shrink-0">
                                       {mergedMaterials[key] === lk ? (
                                         <button
                                           onClick={() =>
@@ -8110,7 +8580,7 @@ const CalculatorView = ({
                                               return next;
                                             })
                                           }
-                                          className="px-3 py-1 bg-white text-blue-600 border border-blue-200 rounded-lg text-xs font-bold hover:bg-blue-100"
+                                          className="px-3 py-1.5 bg-white text-emerald-700 border border-emerald-300 rounded-lg text-xs font-bold hover:bg-emerald-100 cursor-pointer"
                                         >
                                           Отменить объединение
                                         </button>
@@ -8122,9 +8592,9 @@ const CalculatorView = ({
                                               [key]: lk,
                                             }))
                                           }
-                                          className="px-4 py-1 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm"
+                                          className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm cursor-pointer"
                                         >
-                                          Объединить
+                                          Объединить раскрой в ЛДСП
                                         </button>
                                       )}
                                     </div>
@@ -8597,7 +9067,13 @@ const CalculatorView = ({
                             const combinedDetails = [...item.details];
                             Object.entries(mergedMaterials).forEach(([mKey, targetKey]) => {
                               if (targetKey === key && results[mKey]) {
-                                combinedDetails.push(...results[mKey].details);
+                                const isFacadeSource = results[mKey].type === "Фасад";
+                                const mappedDetails = results[mKey].details.map((d: any) =>
+                                  isFacadeSource && !String(d.name || "").includes("[Фасад]")
+                                    ? { ...d, name: `[Фасад] ${d.name || "Фасад"}` }
+                                    : d,
+                                );
+                                combinedDetails.push(...mappedDetails);
                               }
                             });
 
@@ -10946,8 +11422,21 @@ const SummaryView = ({
           coef = resolveBrandCoefficient("ldsp", brand);
         else if (item.type === "ХДФ")
           coef = resolveBrandCoefficient("hdf", brand);
-        else if (isSheetFacade)
-          coef = resolveBrandCoefficient("facadeSheet", brand);
+        else if (isSheetFacade) {
+          const sheetBrandName = sheetConfigs[key]?.name || brand;
+          const sysItem = GLOBAL_SYSTEM_BRANDS.find(
+            (b) => b.brand.toLowerCase() === String(sheetBrandName).toLowerCase(),
+          );
+          const isLdspBrand =
+            sysItem
+              ? sysItem.type === "ЛДСП"
+              : (configToUse?.ldspBrands || ownProductionConfig?.ldspBrands || []).some(
+                  (b: any) =>
+                    String(b.brand).toLowerCase() === String(sheetBrandName).toLowerCase() &&
+                    (b.type || "ЛДСП") === "ЛДСП",
+                );
+          coef = resolveBrandCoefficient(isLdspBrand ? "ldsp" : "facadeSheet", brand);
+        }
 
         // Collate details for merged materials
         const combinedDetails = [...item.details];
@@ -11208,6 +11697,7 @@ const SummaryView = ({
             priceKey?: string;
             coef: number;
             totalLength: number;
+            isFacadeEdge?: boolean;
           }
         > = {};
 
@@ -11303,7 +11793,7 @@ const SummaryView = ({
             edgeLenActual - regularEdgeLengthToRemove,
           );
 
-          const thickness = isFacade ? "1.0" : edgeThickness[ck] || "0.4";
+          const thickness = isFacade ? (edgeThickness[ck] || "1.0") : (edgeThickness[ck] || "0.4");
           const decor = edgeDecor[ck] || "Не указан";
 
           const itemsInBoardDecor =
@@ -11313,7 +11803,7 @@ const SummaryView = ({
           const boardBrand = itemsInBoardDecor[0] || "";
           const coef = resolveBrandCoefficient("edge", boardBrand);
 
-          const groupKey = `${thickness}|${decor}`;
+          const groupKey = `${isFacade ? "facade" : "body"}|${thickness}|${decor}`;
 
             const normThick = thickness === "1" || thickness === "1.0" ? "1.0" : thickness === "2" || thickness === "2.0" ? "2.0" : thickness;
             const dAndTKey = `edgePrice_${decor}_${normThick}`;
@@ -11353,6 +11843,7 @@ const SummaryView = ({
                 priceKey: dAndTKey,
                 coef,
                 totalLength: 0,
+                isFacadeEdge: isFacade,
               };
             }
             edgeGroups[groupKey].totalLength += edgeLenActual;
@@ -11561,7 +12052,7 @@ const SummaryView = ({
               type: "edge",
               name: String(thickness).includes("Склейка")
                 ? "Кромка (Склейка)"
-                : `Кромка ${group.decor !== "Не указан" && group.decor !== "Не выбран" ? group.decor + " " : ""}${thickness} мм`,
+                : `Кромка ${group.decor !== "Не указан" && group.decor !== "Не выбран" ? group.decor + " " : ""}${thickness} мм${group.isFacadeEdge ? " (для Фасадов)" : ""}`,
               sub: edgeSubText,
               decor: group.decor,
               qty: displayQty,
@@ -11569,12 +12060,36 @@ const SummaryView = ({
               rawPrice: group.price,
               total: Math.round(eCost),
               isEdge: true,
+              isFacadeEdge: group.isFacadeEdge,
               key: group.key,
               priceKey: finalEdgePriceKey,
               coef: effectiveCalcMode === "coefficients" ? group.coef : 1,
               thickness: thickness,
             });
           });
+
+        // For any facades merged into this material, emit an informational row so project specifications preserve the facade brand/decor
+        clusterKeys.forEach((ck) => {
+          if (ck !== key && results[ck]?.type === "Фасад") {
+            const facItem = results[ck];
+            const facDecor = selectedDecor[ck] || facItem.color || decor || "Не выбран";
+            const facEdgeTh = edgeThickness[ck] || "1.0";
+            const facEdgeDec = edgeDecor[ck] || "";
+            rows.push({
+              type: "facade",
+              name: "Фасад (ЛДСП)",
+              sub: `${facItem.thickness} мм, в раскрое корпуса${facEdgeDec ? `, кромка ${facEdgeTh} мм (${facEdgeDec})` : ""}`,
+              decor: facDecor,
+              qty: `${Number(facItem.area || 0).toFixed(2)} м²`,
+              price: 0,
+              rawPrice: 0,
+              total: 0,
+              coef: 1,
+              key: ck,
+              isMergedFacadeSpec: true,
+            });
+          }
+        });
 
         return rows;
       })
@@ -13419,7 +13934,8 @@ const SummaryView = ({
                 (r) =>
                   r.type === "material" ||
                   r.type === "edge" ||
-                  r.type === "hardware",
+                  r.type === "hardware" ||
+                  r.isMergedFacadeSpec,
               )
               .map((row, idx) => {
                 const isMaterial = row.type === "material";
@@ -13802,6 +14318,10 @@ const SummaryView = ({
                             )}
                           </div>
                         </div>
+                      ) : row.isMergedFacadeSpec ? (
+                        <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100">
+                          В раскрое ЛДСП
+                        </span>
                       ) : (
                         row.isStandardEquipment ? (
                           <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-extrabold uppercase tracking-wide">Входит</span>
@@ -13809,7 +14329,11 @@ const SummaryView = ({
                       )}
                     </td>
                     <td className="px-3 sm:px-4 py-2 text-right font-bold text-gray-900 whitespace-nowrap">
-                      {row.displayTotal !== row.total ? (
+                      {row.isMergedFacadeSpec ? (
+                        <span className="text-[11px] font-bold text-indigo-600">
+                          Учтено в ЛДСП
+                        </span>
+                      ) : row.displayTotal !== row.total ? (
                         <div className="flex flex-col items-end">
                           <span className="text-xs line-through text-gray-400 font-normal">{(row.displayTotal ?? row.total).toLocaleString()} ₽</span>
                           <span className="text-sm font-extrabold text-indigo-600">{(row.netPaid ?? row.total).toLocaleString()} ₽</span>
@@ -28450,9 +28974,21 @@ const ProductsView = ({
                                 </div>
                               )}
                               <div className="min-w-0">
-                                <span className="font-bold text-gray-900 block truncate">{dm.name}</span>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className="font-bold text-gray-900 truncate">{dm.name}</span>
+                                  {dm.isMasterBrandProduct && (
+                                    <span className="px-2 py-0.5 rounded-md bg-blue-600 text-white text-[9px] font-black uppercase tracking-wider">
+                                      ★ Эталон бренда
+                                    </span>
+                                  )}
+                                  {dm.isNovelty && (
+                                    <span className="px-2 py-0.5 rounded-md bg-amber-400 text-slate-950 text-[9px] font-black uppercase">
+                                      🔥 Новинка
+                                    </span>
+                                  )}
+                                </div>
                                 <span className="text-[10px] text-gray-600 block truncate">
-                                  <strong className="text-amber-700 font-bold">Арт. произв: {dm.manufacturerArticle || dm.article || "—"}</strong> • Арт: {dm.article || "—"} • {dm.manufacturer || "Без бренда"} • {dm.category}
+                                  <strong className="text-amber-700 font-bold">Арт. произв: {dm.manufacturerArticle || dm.article || "—"}</strong> • {dm.manufacturer || dm.brand || "Без бренда"} • {dm.category}
                                 </span>
                               </div>
                             </div>
@@ -28464,12 +29000,15 @@ const ProductsView = ({
                                   name: dm.name || prev.name,
                                   manufacturerArticle: dm.manufacturerArticle || prev.manufacturerArticle || prev.article,
                                   description: dm.description || prev.description,
-                                  images: (prev.images && prev.images.length > 0) ? prev.images : (dm.images && dm.images.length > 0 ? dm.images : []),
+                                  image: prev.image || dm.image || (dm.images && dm.images[0]) || "",
+                                  images: (prev.images && prev.images.length > 0) ? prev.images : (dm.images && dm.images.length > 0 ? dm.images : (dm.image ? [dm.image] : [])),
                                   color: dm.color || prev.color,
                                   unit: dm.unit || prev.unit,
-                                  manufacturer: dm.manufacturer || prev.manufacturer,
+                                  manufacturer: dm.manufacturer || dm.brand || prev.manufacturer,
+                                  brand: dm.brand || dm.manufacturer || prev.brand,
                                   category: dm.category || prev.category,
-                                  purchasePrice: dm.purchasePrice || prev.purchasePrice,
+                                  purchasePrice: dm.purchasePrice || dm.price || prev.purchasePrice,
+                                  price: prev.price || dm.price || prev.purchasePrice,
                                   dryerWidth: dm.dryerWidth || prev.dryerWidth,
                                   dryerBase: dm.dryerBase || prev.dryerBase,
                                   handleMaterial: dm.handleMaterial || prev.handleMaterial,
@@ -28483,7 +29022,9 @@ const ProductsView = ({
                                 }));
                                 showAlert(
                                   "Данные карточки заполнены",
-                                  "Название, категория, описание, бренд и характеристики товара заполнены из каталога. Внутренний артикул и артикул поставщика сохранены."
+                                  dm.isMasterBrandProduct
+                                    ? `Загружена официальная эталонная карточка бренда «${dm.brand || dm.manufacturer}» по артикулу ${dm.manufacturerArticle}.`
+                                    : "Название, категория, описание, бренд и характеристики товара заполнены из каталога. Внутренний артикул и артикул поставщика сохранены."
                                 );
                               }}
                               className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl transition-all font-bold text-[11px] flex-shrink-0 cursor-pointer shadow-sm active:scale-95 flex items-center gap-1"
@@ -35138,8 +35679,27 @@ export default function App() {
     return false;
   });
   const [adminActiveTab, setAdminActiveTab] = useState<
-    "overview" | "companies" | "applications" | "news" | "socials" | "users" | "notifications" | "requisites" | "database"
+    "overview" | "companies" | "applications" | "brands" | "partners" | "news" | "socials" | "users" | "notifications" | "requisites" | "database"
   >("overview");
+  const [partnerEcosystemData, setPartnerEcosystemData] = useState<{
+    partners: any[];
+    masterProducts: any[];
+  }>({ partners: [], masterProducts: [] });
+  const [dealerCityFilterInModal, setDealerCityFilterInModal] = useState<string>("");
+
+  useEffect(() => {
+    fetch("/api/partner/ecosystem")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.partners)) {
+          setPartnerEcosystemData({
+            partners: data.partners,
+            masterProducts: Array.isArray(data.masterProducts) ? data.masterProducts : [],
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
@@ -40598,6 +41158,7 @@ export default function App() {
           facadeCategory,
           facadeMilling,
           facadeThicknessOverride,
+          mergedMaterials,
           addedProducts: activeProducts,
           addedServices: activeServices,
           unmatchedBazisItems: activeUnmatchedBazis,
@@ -41051,6 +41612,7 @@ export default function App() {
     if (d.facadeMilling) setFacadeMilling(d.facadeMilling);
     if (d.facadeThicknessOverride)
       setFacadeThicknessOverride(d.facadeThicknessOverride);
+    setMergedMaterials(d.mergedMaterials || {});
     if (d.addedProducts) setAddedProducts(d.addedProducts);
     if (d.addedServices) setAddedServices(d.addedServices);
     setUnmatchedBazisItems(d.unmatchedBazisItems || []);
@@ -42131,9 +42693,21 @@ export default function App() {
         coef = resolveBrandCoefficient("ldsp", brand);
       else if (item.type === "ХДФ")
         coef = resolveBrandCoefficient("hdf", brand);
-      else if (isSheetFacade)
-        coef = resolveBrandCoefficient("facadeSheet", brand);
-      else if (isCustomFacade)
+      else if (isSheetFacade) {
+        const sheetBrandName = sheetConfigs[key]?.name || brand;
+        const sysItem = GLOBAL_SYSTEM_BRANDS.find(
+          (b) => b.brand.toLowerCase() === String(sheetBrandName).toLowerCase(),
+        );
+        const isLdspBrand =
+          sysItem
+            ? sysItem.type === "ЛДСП"
+            : (configToUse?.ldspBrands || ownProductionConfig?.ldspBrands || []).some(
+                (b: any) =>
+                  String(b.brand).toLowerCase() === String(sheetBrandName).toLowerCase() &&
+                  (b.type || "ЛДСП") === "ЛДСП",
+              );
+        coef = resolveBrandCoefficient(isLdspBrand ? "ldsp" : "facadeSheet", brand);
+      } else if (isCustomFacade)
         coef = resolveBrandCoefficient("facadeCustom", brand);
 
       let itemFinalCost = 0;
@@ -42307,9 +42881,9 @@ export default function App() {
         }, 0) / 1000;
       }
       
-      const thick = isFacade ? "1.0" : (edgeThickness[ck] || "0.4");
+      const thick = isFacade ? (edgeThickness[ck] || "1.0") : (edgeThickness[ck] || "0.4");
       const dec = edgeDecor[ck] || "Не указан";
-      const gK = `${thick}|${dec}`;
+      const gK = `${isFacade ? "facade" : "body"}|${thick}|${dec}`;
       
       if (!edgeGroupsForTotal[gK]) {
         let eP = edgePrices[ck] || 0;
@@ -42321,13 +42895,13 @@ export default function App() {
           const variations = [dec, dec.replace(/ /g, "|"), dec.toUpperCase(), dec.toLowerCase()];
           for (const v of variations) { if (configToUse.prices?.[v]) { eP = configToUse.prices[v]; break; } }
         }
-        edgeGroupsForTotal[gK] = { len: 0, price: eP, coef: resolveBrandCoefficient("edge", boardBrand), brand: boardBrand };
+        edgeGroupsForTotal[gK] = { len: 0, price: eP, coef: resolveBrandCoefficient("edge", boardBrand), brand: boardBrand, thick };
       }
       edgeGroupsForTotal[gK].len += eLen;
     });
 
-    Object.entries(edgeGroupsForTotal).forEach(([gK, g]) => {
-      const [thick, dec] = gK.split("|");
+    Object.entries(edgeGroupsForTotal).forEach(([_, g]) => {
+      const thick = g.thick;
       const multiplicity = configToUse.edgeMultiplicity?.[`${g.brand}:${thick}`] || 0;
       const sQty = multiplicity > 0 ? Math.ceil(g.len / multiplicity) * multiplicity : Math.ceil(g.len);
       const edgeCost = Math.round(sQty * g.price * g.coef);
@@ -42464,10 +43038,57 @@ export default function App() {
     return <PublicLandingView aliasOrId={hostMappedAlias.companySlug} initialSubPath={subPath} />;
   }
 
-  // 6. Direct custom company slug routes (e.g. /mebelfaktura, /mebelfaktura/moduli, /mebelfaktura/erp)
+  // 6. Partner / Brand Representative Ecosystem Routes (/partner, /partner/:slug, /partner/invite/:token, and direct brand URLs like /boyard, /egger)
+  const isPartnerRoute =
+    lowerPath === "/partner" ||
+    lowerPath.startsWith("/partner/") ||
+    (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("partner_invite"));
+
+  if (isPartnerRoute) {
+    return (
+      <PartnerCabinetView
+        currentUser={userData}
+        onExitToMain={() => {
+          window.history.pushState({}, "", "/");
+          window.location.reload();
+        }}
+      />
+    );
+  }
+
+  const directBrandAliases = new Set<string>(["boyard", "egger"]);
+  (partnerEcosystemData?.partners || []).forEach((p: any) => {
+    const rawSlugs = p?.brandSlugs;
+    const slugs = Array.isArray(rawSlugs)
+      ? rawSlugs
+      : (rawSlugs && typeof rawSlugs === "object"
+          ? Object.values(rawSlugs)
+          : (typeof rawSlugs === "string" ? rawSlugs.split(",") : []));
+    slugs.forEach((bs: any) => {
+      if (typeof bs === "string" && bs.trim()) {
+        directBrandAliases.add(bs.trim().toLowerCase());
+      }
+    });
+  });
+
+  if (pathSegments.length === 1 && directBrandAliases.has(pathSegments[0].toLowerCase())) {
+    return (
+      <PartnerCabinetView
+        initialSlug={pathSegments[0].toLowerCase()}
+        isDirectBrandUrl={true}
+        currentUser={userData}
+        onExitToMain={() => {
+          window.history.pushState({}, "", "/");
+          window.location.reload();
+        }}
+      />
+    );
+  }
+
+  // 7. Direct custom company slug routes (e.g. /mebelfaktura, /mebelfaktura/moduli, /mebelfaktura/erp)
   const reservedSystemRoutes = [
     "", "login", "register", "admin", "dashboard", "api", "assets", "static", "favicon.ico", "c",
-    "s", "store", "vitrina", "shop", "vtr", "erp", "installer", "p", "package", "pkg",
+    "s", "store", "vitrina", "shop", "vtr", "erp", "installer", "p", "package", "pkg", "partner",
     "calculator", "projects", "products", "services", "service-section", "price", "production", 
     "employees", "settings", "promotions", "specification", "profile", "procurement", 
     "procurement_plan", "arrivals", "summary", "checkout_current", "ready_made"
@@ -42729,13 +43350,15 @@ export default function App() {
 
   if (effectiveIsAppAdmin && showAdminPanel) {
     const adminNavItems: {
-      id: "overview" | "companies" | "applications" | "news" | "socials" | "users" | "notifications" | "requisites" | "database";
+      id: "overview" | "companies" | "applications" | "brands" | "partners" | "news" | "socials" | "users" | "notifications" | "requisites" | "database";
       label: string;
       icon: React.ComponentType<{ className?: string }>;
     }[] = [
       { id: "overview", label: "Обзор", icon: BarChart3 },
       { id: "companies", label: "Компании", icon: Building2 },
       { id: "applications", label: "Заявки", icon: Inbox },
+      { id: "brands", label: "Каталог брендов", icon: Layers },
+      { id: "partners", label: "Поставщики и Бренды", icon: Truck },
       { id: "news", label: "Новости", icon: Bell },
       { id: "socials", label: "Мультипостинг", icon: Send },
       { id: "users", label: "Пользователи", icon: Users },
@@ -44422,6 +45045,7 @@ export default function App() {
                   facadeCategory,
                   facadeMilling,
                   facadeThicknessOverride,
+                  mergedMaterials,
                 },
                 totalPrice: currentProjectTotal,
               };
@@ -45679,6 +46303,152 @@ export default function App() {
                         })()}
                       </div>
                     )}
+
+                    {/* Official Regional Dealers from Brand Representative Ecosystem */}
+                    {(() => {
+                      const prodBrand = (
+                        selectedProductForDetail.manufacturer ||
+                        selectedProductForDetail.brand ||
+                        selectedProductForDetail.sinkBrand ||
+                        selectedProductForDetail.faucetBrand ||
+                        ""
+                      ).trim().toLowerCase();
+                      const prodMfgArt = (
+                        selectedProductForDetail.manufacturerArticle ||
+                        selectedProductForDetail.article ||
+                        ""
+                      ).trim().toLowerCase();
+                      const prodNameL = (selectedProductForDetail.name || "").toLowerCase();
+
+                      const matchedPartners = (partnerEcosystemData.partners || []).filter((p: any) => {
+                        const managesBrand = (p.managedBrands || []).some((mb: string) => {
+                          const mbL = mb.toLowerCase();
+                          return (prodBrand && (prodBrand.includes(mbL) || mbL.includes(prodBrand))) || prodNameL.includes(mbL);
+                        });
+                        if (managesBrand) return true;
+                        if (prodMfgArt) {
+                          return (partnerEcosystemData.masterProducts || []).some(
+                            (mp: any) => mp.partnerId === p.id && (mp.manufacturerArticle || "").toLowerCase() === prodMfgArt
+                          );
+                        }
+                        return false;
+                      });
+
+                      const getFirstBrandSlug = (pObj: any): string => {
+                        if (!pObj) return "";
+                        const raw = pObj.brandSlugs;
+                        if (Array.isArray(raw) && raw.length > 0) return String(raw[0] || "");
+                        if (raw && typeof raw === "object") {
+                          const v = Object.values(raw);
+                          if (v.length > 0) return String(v[0] || "");
+                        }
+                        if (typeof raw === "string") return raw.split(",")[0]?.trim() || "";
+                        return "";
+                      };
+
+                      const allDealers = matchedPartners.flatMap((p: any) =>
+                        (p.dealers || []).map((d: any) => ({
+                          ...d,
+                          partnerName: p.companyName,
+                          partnerSlug: p.partnerSlug,
+                          brandSlug: getFirstBrandSlug(p),
+                        }))
+                      );
+
+                      if (allDealers.length === 0) return null;
+
+                      const userCompanyCity = (companyData?.city || "").trim();
+                      const effectiveCity =
+                        dealerCityFilterInModal !== ""
+                          ? dealerCityFilterInModal
+                          : allDealers.some((d) => d.city.toLowerCase() === userCompanyCity.toLowerCase())
+                          ? userCompanyCity
+                          : "all";
+
+                      const citiesList = Array.from(new Set(allDealers.map((d: any) => d.city).filter(Boolean)));
+                      const visibleDealers =
+                        effectiveCity === "all"
+                          ? allDealers
+                          : allDealers.filter((d: any) => d.city.toLowerCase() === effectiveCity.toLowerCase());
+
+                      const primaryPartner = matchedPartners[0];
+                      const primaryBrandDirectSlug = getFirstBrandSlug(primaryPartner);
+
+                      return (
+                        <div className="bg-amber-50/60 p-5 rounded-3xl border border-amber-200/80 space-y-3.5">
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200/60 pb-3">
+                            <div>
+                              <h4 className="text-xs font-black text-amber-950 uppercase tracking-wider flex items-center gap-1.5">
+                                <MapPin className="w-4 h-4 text-amber-600" />
+                                Официальные дилеры бренда ({visibleDealers.length})
+                              </h4>
+                              <p className="text-[11px] text-amber-800 mt-0.5">
+                                Проверенные точки закупки от официального представительства
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <select
+                                value={effectiveCity}
+                                onChange={(e) => setDealerCityFilterInModal(e.target.value)}
+                                className="px-2.5 py-1.5 rounded-xl border border-amber-300 bg-white text-xs font-bold text-slate-800"
+                              >
+                                <option value="all">Все города ({allDealers.length})</option>
+                                {citiesList.map((cityStr: any) => (
+                                  <option key={cityStr} value={cityStr}>
+                                    г. {cityStr}
+                                  </option>
+                                ))}
+                              </select>
+                              {primaryPartner && (
+                                <a
+                                  href={primaryBrandDirectSlug ? `/${primaryBrandDirectSlug}` : `/partner/${primaryPartner.partnerSlug}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-blue-600 text-white text-[11px] font-bold transition-colors"
+                                >
+                                  Витрина бренда →
+                                </a>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            {visibleDealers.map((dlr: any) => (
+                              <div
+                                key={dlr.id}
+                                className="p-3 rounded-2xl bg-white border border-amber-200/70 shadow-2xs space-y-1 text-xs"
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 text-[10px] font-extrabold">
+                                    г. {dlr.city}
+                                  </span>
+                                  <span className="text-[10px] font-bold text-emerald-600">✓ Офиц. дилер</span>
+                                </div>
+                                <div className="font-extrabold text-slate-900">{dlr.companyName}</div>
+                                {dlr.address && <div className="text-[11px] text-slate-600">{dlr.address}</div>}
+                                <div className="flex items-center justify-between gap-2 pt-1 text-[11px]">
+                                  {dlr.phone && (
+                                    <a href={`tel:${dlr.phone}`} className="font-bold text-blue-600 hover:underline">
+                                      {dlr.phone}
+                                    </a>
+                                  )}
+                                  {dlr.website && (
+                                    <a
+                                      href={dlr.website}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-slate-500 hover:text-blue-600 font-bold"
+                                    >
+                                      Сайт ↗
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* Kit composition details in product modal */}
                     {(selectedProductForDetail.isKit || (Array.isArray(selectedProductForDetail.kitItems) && selectedProductForDetail.kitItems.length > 0)) && (

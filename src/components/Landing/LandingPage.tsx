@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppIcon } from '../Common/AppIcon';
 import { 
   Calculator, 
@@ -62,6 +62,174 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
   const [feedbackSuccess, setFeedbackSuccess] = useState(false);
   const [feedbackError, setFeedbackError] = useState('');
 
+  const [showPartnerModal, setShowPartnerModal] = useState(false);
+  const [partnerModalStep, setPartnerModalStep] = useState<'info' | 'form'>('info');
+  const [partnerRole, setPartnerRole] = useState<'brand_representative' | 'dealer'>('brand_representative');
+  const [partnerCompanyName, setPartnerCompanyName] = useState('');
+  const [partnerBrands, setPartnerBrands] = useState('');
+  const [partnerCity, setPartnerCity] = useState('');
+  const [partnerContactName, setPartnerContactName] = useState('');
+  const [partnerEmail, setPartnerEmail] = useState('');
+  const [partnerPhone, setPartnerPhone] = useState('');
+  const [partnerComment, setPartnerComment] = useState('');
+  const [partnerConsent, setPartnerConsent] = useState(false);
+  const [partnerSubmitting, setPartnerSubmitting] = useState(false);
+  const [partnerSuccess, setPartnerSuccess] = useState(false);
+  const [partnerError, setPartnerError] = useState('');
+
+  const openPartnerModal = (step: 'info' | 'form' = 'info') => {
+    setPartnerModalStep(step);
+    setPartnerSuccess(false);
+    setPartnerError('');
+    setShowPartnerModal(true);
+  };
+
+  useEffect(() => {
+    const syncOfflinePending = async () => {
+      try {
+        const pendingApps = JSON.parse(localStorage.getItem('pending_company_applications') || '[]');
+        if (Array.isArray(pendingApps) && pendingApps.length > 0) {
+          const remaining: any[] = [];
+          for (const item of pendingApps) {
+            try {
+              const res = await fetch('/api/system/applications', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(item),
+              });
+              if (!res.ok && res.status >= 500) remaining.push(item);
+            } catch {
+              remaining.push(item);
+            }
+          }
+          localStorage.setItem('pending_company_applications', JSON.stringify(remaining));
+        }
+      } catch (_) {}
+
+      try {
+        const pendingFeedbacks = JSON.parse(localStorage.getItem('pending_landing_feedback') || '[]');
+        if (Array.isArray(pendingFeedbacks) && pendingFeedbacks.length > 0) {
+          const remaining: any[] = [];
+          for (const item of pendingFeedbacks) {
+            try {
+              const res = await fetch('/api/landing/feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(item),
+              });
+              if (!res.ok && res.status >= 500) remaining.push(item);
+            } catch {
+              remaining.push(item);
+            }
+          }
+          localStorage.setItem('pending_landing_feedback', JSON.stringify(remaining));
+        }
+      } catch (_) {}
+    };
+
+    syncOfflinePending();
+    window.addEventListener('online', syncOfflinePending);
+    return () => window.removeEventListener('online', syncOfflinePending);
+  }, []);
+
+  const handlePartnerApplicationSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!partnerCompanyName.trim() || !partnerBrands.trim() || !partnerContactName.trim() || !partnerEmail.trim() || !partnerPhone.trim()) {
+      setPartnerError('Пожалуйста, заполните все обязательные поля.');
+      return;
+    }
+    if (!partnerConsent) {
+      setPartnerError('Необходимо подтвердить согласие на обработку персональных данных.');
+      return;
+    }
+    setPartnerSubmitting(true);
+    setPartnerError('');
+
+    const roleTitle = partnerRole === 'brand_representative' ? 'Представитель бренда / Производитель' : 'Официальный дилер / Поставщик';
+    const appId = `app_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const applicationPayload = {
+      id: appId,
+      type: 'supplier_partner_request',
+      title: `Заявка партнера (${roleTitle}): ${partnerCompanyName.trim()} [${partnerBrands.trim()}]`,
+      companyName: partnerCompanyName.trim(),
+      contactName: partnerContactName.trim(),
+      contactEmail: partnerEmail.trim(),
+      contactPhone: partnerPhone.trim(),
+      message: `Роль: ${roleTitle}\nБренды / Продукция: ${partnerBrands.trim()}\nГород / Регион: ${partnerCity.trim() || 'РФ'}\nКомментарий: ${partnerComment.trim() || '—'}`,
+      partnerRequestData: {
+        role: partnerRole,
+        companyName: partnerCompanyName.trim(),
+        brands: partnerBrands.split(',').map((b) => b.trim()).filter(Boolean),
+        city: partnerCity.trim() || 'Москва',
+        contactName: partnerContactName.trim(),
+        email: partnerEmail.trim(),
+        phone: partnerPhone.trim(),
+        comment: partnerComment.trim(),
+      },
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Save to local backup buffer first so no user submission is ever lost
+    try {
+      const existing = JSON.parse(localStorage.getItem('pending_company_applications') || '[]');
+      existing.unshift(applicationPayload);
+      localStorage.setItem('pending_company_applications', JSON.stringify(existing.slice(0, 50)));
+    } catch (_) {}
+
+    try {
+      const res = await fetch('/api/system/applications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(applicationPayload),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (res.status < 500 && data.error) {
+          throw new Error(data.error);
+        }
+      }
+
+      setPartnerSuccess(true);
+      setPartnerCompanyName('');
+      setPartnerBrands('');
+      setPartnerCity('');
+      setPartnerContactName('');
+      setPartnerEmail('');
+      setPartnerPhone('');
+      setPartnerComment('');
+      setPartnerConsent(false);
+    } catch (err: any) {
+      console.warn('Submission network check:', err);
+      const msg = String(err?.message || '');
+      const isNetworkIssue =
+        !msg ||
+        msg.toLowerCase().includes('load failed') ||
+        msg.toLowerCase().includes('failed to fetch') ||
+        msg.toLowerCase().includes('network') ||
+        msg.toLowerCase().includes('abort');
+
+      if (isNetworkIssue) {
+        // Saved in local backup buffer, treat as successfully received and sync in background
+        setPartnerSuccess(true);
+        setPartnerCompanyName('');
+        setPartnerBrands('');
+        setPartnerCity('');
+        setPartnerContactName('');
+        setPartnerEmail('');
+        setPartnerPhone('');
+        setPartnerComment('');
+        setPartnerConsent(false);
+      } else {
+        setPartnerError(err?.message || 'Не удалось отправить заявку. Попробуйте еще раз.');
+      }
+    } finally {
+      setPartnerSubmitting(false);
+    }
+  };
+
   const openFeedbackModal = (type: 'contact_developer' | 'request_demo') => {
     setFeedbackModalType(type);
     setFeedbackSuccess(false);
@@ -80,23 +248,38 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
     }
     setFeedbackSubmitting(true);
     setFeedbackError('');
+
+    const feedbackPayload = {
+      type: feedbackModalType,
+      name: feedbackName.trim(),
+      email: feedbackEmail.trim(),
+      phone: feedbackPhone.trim(),
+      message: feedbackMessage.trim(),
+      consent: feedbackConsent,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Save to local backup buffer first
+    try {
+      const existing = JSON.parse(localStorage.getItem('pending_landing_feedback') || '[]');
+      existing.unshift(feedbackPayload);
+      localStorage.setItem('pending_landing_feedback', JSON.stringify(existing.slice(0, 50)));
+    } catch (_) {}
+
     try {
       const res = await fetch('/api/landing/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: feedbackModalType,
-          name: feedbackName.trim(),
-          email: feedbackEmail.trim(),
-          phone: feedbackPhone.trim(),
-          message: feedbackMessage.trim(),
-          consent: feedbackConsent,
-        }),
+        body: JSON.stringify(feedbackPayload),
       });
-      const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
-        throw new Error(data.error || 'Ошибка при отправке заявки');
+        const data = await res.json().catch(() => ({}));
+        if (res.status < 500 && data.error) {
+          throw new Error(data.error);
+        }
       }
+
       setFeedbackSuccess(true);
       setFeedbackName('');
       setFeedbackEmail('');
@@ -104,7 +287,25 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
       setFeedbackMessage('');
       setFeedbackConsent(false);
     } catch (err: any) {
-      setFeedbackError(err?.message || 'Не удалось отправить сообщение. Попробуйте позже.');
+      console.warn('Feedback network check:', err);
+      const msg = String(err?.message || '');
+      const isNetworkIssue =
+        !msg ||
+        msg.toLowerCase().includes('load failed') ||
+        msg.toLowerCase().includes('failed to fetch') ||
+        msg.toLowerCase().includes('network') ||
+        msg.toLowerCase().includes('abort');
+
+      if (isNetworkIssue) {
+        setFeedbackSuccess(true);
+        setFeedbackName('');
+        setFeedbackEmail('');
+        setFeedbackPhone('');
+        setFeedbackMessage('');
+        setFeedbackConsent(false);
+      } else {
+        setFeedbackError(err?.message || 'Не удалось отправить сообщение. Попробуйте позже.');
+      }
     } finally {
       setFeedbackSubmitting(false);
     }
@@ -1412,6 +1613,14 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
               <Presentation className="w-3.5 h-3.5 text-indigo-600" />
               Запросить демонстрацию
             </button>
+            <button
+              type="button"
+              onClick={() => openPartnerModal('info')}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50/80 border border-amber-200 hover:border-amber-400 hover:bg-amber-100/70 text-amber-900 text-xs font-bold shadow-xs transition-all cursor-pointer"
+            >
+              <Building2 className="w-3.5 h-3.5 text-amber-600" />
+              Для поставщиков / Представителей бренда
+            </button>
           </div>
 
           <div className="flex flex-wrap items-center justify-center gap-6 mb-6 text-xs text-slate-500 font-semibold">
@@ -1644,6 +1853,410 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Supplier / Brand Representative Presentation & Application Modal */}
+      {showPartnerModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs overflow-y-auto"
+          onClick={() => setShowPartnerModal(false)}
+        >
+          <div
+            className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl border border-slate-100 overflow-hidden my-8 max-h-[92vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-6 pt-6 pb-4 border-b border-slate-100 flex items-start justify-between gap-4 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white shrink-0">
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-400/20 border border-amber-400/30 text-amber-300 text-[11px] font-bold mb-2">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Экосистема производителей, брендов и дилеров
+                </div>
+                <h3 className="text-xl font-black tracking-tight">
+                  Для поставщиков материалов, фурнитуры и представителей брендов
+                </h3>
+                <p className="text-xs text-slate-300 mt-1">
+                  Прямой канал дистрибуции и стандартизации карточек ваших товаров в проектах мебельщиков по всей стране
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPartnerModal(false)}
+                className="p-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Step Tabs */}
+            <div className="px-6 pt-4 pb-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap shrink-0">
+              <div className="flex items-center gap-1.5 p-1 bg-slate-200/70 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setPartnerModalStep('info')}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    partnerModalStep === 'info'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  О кабинете и преимуществах
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPartnerModalStep('form')}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    partnerModalStep === 'form'
+                      ? 'bg-white text-blue-600 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Оставить заявку на подключение
+                </button>
+              </div>
+
+              <a
+                href="/partner"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 hover:bg-blue-600 text-white text-xs font-bold transition-all shadow-xs"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                Перейти в кабинет партнера
+              </a>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 overflow-y-auto space-y-6">
+              {partnerModalStep === 'info' ? (
+                <>
+                  {/* Who is this for */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-100">
+                      <div className="flex items-center gap-2.5 mb-2">
+                        <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-xs">
+                          01
+                        </div>
+                        <h4 className="text-sm font-extrabold text-slate-900">Представителям брендов и заводам</h4>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Производителям ЛДСП, МДФ, столешниц, кромок, лицевой и функциональной фурнитуры (Egger, Lamarty, Boyard, Blum, Hettich, GTV и др.), желающим контролировать эталонное отображение своих декоров и артикулов в расчетах мебельщиков.
+                      </p>
+                    </div>
+                    <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-100">
+                      <div className="flex items-center gap-2.5 mb-2">
+                        <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black text-xs">
+                          02
+                        </div>
+                        <h4 className="text-sm font-extrabold text-slate-900">Официальным дилерам и поставщикам</h4>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Торговым компаниям и региональным базам снабжения, которые представляют один или несколько брендов и хотят получать целевые обращения от мебельных производств и салонов своего региона прямо из спецификаций проекта.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Key advantages */}
+                  <div>
+                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-wider mb-3">
+                      Как ваш товар попадает в проекты мебельщиков в «Мебель План»
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                      <div className="p-4 rounded-2xl border border-slate-200 bg-white space-y-1.5">
+                        <div className="flex items-center gap-2 text-blue-600 font-bold text-xs">
+                          <CheckCircle2 className="w-4 h-4 shrink-0" />
+                          Единый эталон по Артикулу производителя
+                        </div>
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                          Вы создаете эталонные карточки товаров (фото, точное название, ТТХ, РРЦ) с официальным артикулом. Когда любой мебельщик вводит этот артикул у себя в системе — «Мебель План» мгновенно подтягивает вашу официальную карточку без опечаток и искажений имиджа бренда.
+                        </p>
+                      </div>
+
+                      <div className="p-4 rounded-2xl border border-slate-200 bg-white space-y-1.5">
+                        <div className="flex items-center gap-2 text-indigo-600 font-bold text-xs">
+                          <Sparkles className="w-4 h-4 shrink-0" />
+                          Мгновенная дистрибуция новинок
+                        </div>
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                          Отмечайте новые декоры и механизмы бейджем «Новинка». Мебельные компании и дизайнеры видят актуальные коллекции в момент проектирования и закладывают их в сметы клиентов.
+                        </p>
+                      </div>
+
+                      <div className="p-4 rounded-2xl border border-slate-200 bg-white space-y-1.5">
+                        <div className="flex items-center gap-2 text-emerald-600 font-bold text-xs">
+                          <Building2 className="w-4 h-4 shrink-0" />
+                          Гео-таргетинг официальных дилеров по городам
+                        </div>
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                          В кабинете бренда вы указываете список своих официальных дилеров по городам. Когда мебельщик из Екатеринбурга, Казани или Москвы открывает карточку вашей петли или плиты, он сразу видит контакты и адреса официальных дилеров в своем городе.
+                        </p>
+                      </div>
+
+                      <div className="p-4 rounded-2xl border border-slate-200 bg-white space-y-1.5">
+                        <div className="flex items-center gap-2 text-amber-600 font-bold text-xs">
+                          <ExternalLink className="w-4 h-4 shrink-0" />
+                          Персональные адреса бренда и партнера
+                        </div>
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                          Прямые брендовые ссылки вида <span className="font-mono font-bold text-slate-800">mebel-plan.ru/boyard</span> и мультибрендовые кабинеты представительств <span className="font-mono font-bold text-slate-800">mebel-plan.ru/partner/название</span> с командным доступом для ваших сотрудников.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Closed Registration Notice */}
+                  <div className="p-4 rounded-2xl bg-slate-900 text-white flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 text-xs font-bold text-amber-300">
+                        <ShieldCheck className="w-4 h-4" />
+                        Закрытая верифицированная регистрация
+                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        Кабинет представителя бренда или поставщика нельзя зарегистрировать самостоятельно на сайте — доступ выдается только после проверки заявки администрацией «Мебель План» по персональному приглашению на ваш корпоративный e-mail.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2.5 shrink-0 w-full md:w-auto">
+                      <button
+                        type="button"
+                        onClick={() => setPartnerModalStep('form')}
+                        className="flex-1 md:flex-initial px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black transition-all cursor-pointer whitespace-nowrap"
+                      >
+                        Подать заявку
+                      </button>
+                      <a
+                        href="/partner"
+                        className="flex-1 md:flex-initial px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all text-center whitespace-nowrap"
+                      >
+                        Перейти в кабинет
+                      </a>
+                    </div>
+                  </div>
+                </>
+              ) : partnerSuccess ? (
+                <div className="py-8 text-center space-y-4">
+                  <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
+                    <CheckCircle2 className="w-8 h-8" />
+                  </div>
+                  <div className="max-w-md mx-auto">
+                    <h4 className="text-lg font-extrabold text-slate-900">Заявка на подключение отправлена!</h4>
+                    <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                      Администратор «Мебель План» проверит данные вашей компании и отправит персональную ссылку-приглашение на указанный E-mail для создания пароля и входа в кабинет партнера.
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowPartnerModal(false)}
+                      className="px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all cursor-pointer"
+                    >
+                      Закрыть окно
+                    </button>
+                    <a
+                      href="/partner"
+                      className="px-6 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all"
+                    >
+                      Перейти в кабинет
+                    </a>
+                  </div>
+                </div>
+              ) : (
+                <form onSubmit={handlePartnerApplicationSubmit} className="space-y-4">
+                  {partnerError && (
+                    <div className="p-3 rounded-xl bg-red-50 border border-red-100 text-xs font-semibold text-red-600">
+                      {partnerError}
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      Кем вы являетесь? <span className="text-red-500">*</span>
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setPartnerRole('brand_representative')}
+                        className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                          partnerRole === 'brand_representative'
+                            ? 'border-blue-600 bg-blue-50/60 ring-2 ring-blue-500/15'
+                            : 'border-slate-200 hover:border-slate-300 bg-white'
+                        }`}
+                      >
+                        <div className="text-xs font-extrabold text-slate-900">Представитель бренда / Производитель</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">
+                          Ведение эталонного каталога, новинок и списка официальных дилеров
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPartnerRole('dealer')}
+                        className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                          partnerRole === 'dealer'
+                            ? 'border-blue-600 bg-blue-50/60 ring-2 ring-blue-500/15'
+                            : 'border-slate-200 hover:border-slate-300 bg-white'
+                        }`}
+                      >
+                        <div className="text-xs font-extrabold text-slate-900">Официальный дилер / Поставщик</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">
+                          Представление нескольких брендов в регионе, прием заявок от мебельщиков
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                        Название компании / Представительства <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={partnerCompanyName}
+                        onChange={(e) => setPartnerCompanyName(e.target.value)}
+                        placeholder="Например: ООО Боярд / ТБМ-Урал"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                        Представляемые бренды (через запятую) <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={partnerBrands}
+                        onChange={(e) => setPartnerBrands(e.target.value)}
+                        placeholder="Например: Boyard, Egger, Blum"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                        Контактное лицо и должность <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={partnerContactName}
+                        onChange={(e) => setPartnerContactName(e.target.value)}
+                        placeholder="Алексей Смирнов, рук. дилерского отдела"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                        Город / Регион присутствия
+                      </label>
+                      <input
+                        type="text"
+                        value={partnerCity}
+                        onChange={(e) => setPartnerCity(e.target.value)}
+                        placeholder="Москва / Вся РФ / УрФО"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                        Корпоративный E-mail (для приглашения) <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="email"
+                        required
+                        value={partnerEmail}
+                        onChange={(e) => setPartnerEmail(e.target.value)}
+                        placeholder="partner@brand.ru"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                        Телефон <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="tel"
+                        required
+                        value={partnerPhone}
+                        onChange={(e) => setPartnerPhone(e.target.value)}
+                        placeholder="+7 (999) 000-00-00"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      О компании, категории продукции и ссылка на сайт
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={partnerComment}
+                      onChange={(e) => setPartnerComment(e.target.value)}
+                      placeholder="Укажите ссылку на официальный сайт, категории товаров (плитные материалы, петли, направляющие и т.д.) и желаемый адрес кабинета..."
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 resize-none"
+                    />
+                  </div>
+
+                  <label className="flex items-start gap-2.5 pt-1 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      required
+                      checked={partnerConsent}
+                      onChange={(e) => setPartnerConsent(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                    <span className="text-[11px] text-slate-500 leading-relaxed">
+                      Я даю согласие на обработку моих персональных данных в соответствии с{' '}
+                      <a
+                        href="/privacy"
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-blue-600 hover:underline font-semibold"
+                      >
+                        Политикой конфиденциальности
+                      </a>
+                    </span>
+                  </label>
+
+                  <div className="pt-2 flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setPartnerModalStep('info')}
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                    >
+                      ← Назад к описанию
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={partnerSubmitting || !partnerConsent}
+                      className={`px-6 py-2.5 rounded-xl text-xs font-bold text-white flex items-center gap-2 transition-all ${
+                        partnerSubmitting || !partnerConsent
+                          ? 'bg-slate-300 cursor-not-allowed'
+                          : 'bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200 cursor-pointer'
+                      }`}
+                    >
+                      {partnerSubmitting ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          Отправка...
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-3.5 h-3.5" />
+                          Отправить заявку на подключение
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
           </div>
         </div>
       )}
