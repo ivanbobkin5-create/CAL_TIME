@@ -7207,6 +7207,143 @@ const CalculatorView = ({
 }) => {
   const [showInstructionHelp, setShowInstructionHelp] = useState(false);
 
+  const checkMaterialMergeCompatibility = (k1: string, k2: string) => {
+    const item1 = results[k1];
+    const item2 = results[k2];
+    if (!item1 || !item2) return { canMerge: false, mergeType: "none" as const };
+
+    // 1. Thickness must match
+    if (String(item1.thickness) !== String(item2.thickness)) {
+      return { canMerge: false, mergeType: "none" as const };
+    }
+
+    // 2. If it is a facade, it must be a sheet facade (not custom film/enamel)
+    if (item1.type === "Фасад" && (facadeType[k1] || "sheet") !== "sheet") return { canMerge: false, mergeType: "none" as const };
+    if (item2.type === "Фасад" && (facadeType[k2] || "sheet") !== "sheet") return { canMerge: false, mergeType: "none" as const };
+
+    // 3. Extract and normalize brands
+    const extractBrand = (k: string, itm: any) => {
+      const fromCfg = (sheetConfigs[k]?.name || "").trim();
+      if (
+        fromCfg &&
+        !["custom", "default", "не указан", "не выбран", "выберите", "хдф", "двп"].includes(fromCfg.toLowerCase())
+      ) {
+        return fromCfg;
+      }
+      const txt = `${selectedDecor[k] || ""} ${itm.brand || ""} ${itm.color || ""}`.trim();
+      const found = GLOBAL_SYSTEM_BRANDS.find((sb) =>
+        new RegExp(`\\b${sb.brand}\\b`, "i").test(txt)
+      );
+      if (found) return found.brand;
+      return itm.brand || fromCfg || "";
+    };
+
+    const brand1 = extractBrand(k1, item1);
+    const brand2 = extractBrand(k2, item2);
+
+    const getBrandType = (brand: string, itm: any) => {
+      if (!brand) return itm.type || "unknown";
+      const bLow = brand.toLowerCase();
+      const sys = GLOBAL_SYSTEM_BRANDS.find(
+        (sb) => sb.brand.toLowerCase() === bLow || bLow.includes(sb.brand.toLowerCase())
+      );
+      if (sys) return sys.type;
+      if (["egger", "lamarty", "kronospan", "увадрев", "чфмк", "невский", "карелия", "nordeco", "swiss krono"].some(b => bLow.includes(b))) {
+        return "ЛДСП";
+      }
+      if (["agt", "alvic", "eterno", "fundermax", "slotex", "senosan", "arpa", "cleaf", "rehau"].some(b => bLow.includes(b))) {
+        return "МДФ";
+      }
+      return itm.type || "unknown";
+    };
+
+    const brandType1 = getBrandType(brand1, item1);
+    const brandType2 = getBrandType(brand2, item2);
+
+    // 4. Normalize decor
+    const cleanDecor = (s?: string) =>
+      (s || "")
+        .replace(/[,\.;:\-_/|\\]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+
+    // Use selected decor if entered, otherwise item.color
+    const decor1Raw = (selectedDecor[k1] || "").trim() || (item1.color || "").trim();
+    const decor2Raw = (selectedDecor[k2] || "").trim() || (item2.color || "").trim();
+    const decor1 = cleanDecor(decor1Raw);
+    const decor2 = cleanDecor(decor2Raw);
+
+    const isGenericDecor = (d: string) =>
+      !d || ["декор", "цвет", "custom", "default", "не указан", "не выбран"].includes(d);
+
+    if (isGenericDecor(decor1) || isGenericDecor(decor2)) {
+      return { canMerge: false, mergeType: "none" as const };
+    }
+
+    // Decors must match:
+    const decorsMatch =
+      decor1 === decor2 ||
+      (brand1 && brand2 && brand1.toLowerCase() === brand2.toLowerCase() && (decor1.includes(decor2) || decor2.includes(decor1)));
+
+    if (!decorsMatch) {
+      return { canMerge: false, mergeType: "none" as const };
+    }
+
+    // 5. Categorize merge:
+    // CASE A: Both are Facades (Фасад + Фасад)
+    if (item1.type === "Фасад" && item2.type === "Фасад") {
+      if (brand1 && brand2 && brand1.toLowerCase() !== brand2.toLowerCase()) {
+        return { canMerge: false, mergeType: "none" as const };
+      }
+      return {
+        canMerge: true,
+        mergeType: "facade_to_facade" as const,
+        brandName: brand1 || brand2 || "",
+      };
+    }
+
+    // CASE B: One is Facade and one is LDSP
+    const hasFacade = item1.type === "Фасад" || item2.type === "Фасад";
+    const hasLdsp = item1.type === "ЛДСП" || item2.type === "ЛДСП";
+
+    if (hasFacade && hasLdsp) {
+      const facadeBrand = item1.type === "Фасад" ? brand1 : brand2;
+      const ldspBrand = item1.type === "ЛДСП" ? brand1 : brand2;
+      const facadeBrandType = item1.type === "Фасад" ? brandType1 : brandType2;
+
+      // The facade MUST be an LDSP brand (e.g. Egger, Lamarty - NOT AGT, Alvic, MDF)!
+      if (facadeBrandType !== "ЛДСП") {
+        return { canMerge: false, mergeType: "none" as const };
+      }
+
+      // Brands must match!
+      if (facadeBrand && ldspBrand && facadeBrand.toLowerCase() !== ldspBrand.toLowerCase()) {
+        return { canMerge: false, mergeType: "none" as const };
+      }
+
+      return {
+        canMerge: true,
+        mergeType: "facade_to_ldsp" as const,
+        brandName: ldspBrand || facadeBrand || "ЛДСП",
+      };
+    }
+
+    // CASE C: Both are LDSP
+    if (item1.type === "ЛДСП" && item2.type === "ЛДСП") {
+      if (brand1 && brand2 && brand1.toLowerCase() !== brand2.toLowerCase()) {
+        return { canMerge: false, mergeType: "none" as const };
+      }
+      return {
+        canMerge: true,
+        mergeType: "ldsp_to_ldsp" as const,
+        brandName: brand1 || brand2 || "ЛДСП",
+      };
+    }
+
+    return { canMerge: false, mergeType: "none" as const };
+  };
+
   return (
     <div className="p-4 md:p-8">
       {showInstructionHelp && (
@@ -7699,29 +7836,21 @@ const CalculatorView = ({
                         </div>
 
                         {/* Merge Logic for regular materials */}
-                        {(selectedDecor[key] || item.color) && (
+                        {item.type !== "Фасад" && (
                           <div className="pt-2">
                             {Object.keys(results)
                               .filter(
                                 (lk) => {
                                   if (lk === key) return false;
                                   if (mergedMaterials[lk] || mergedMaterials[key]) return false;
-                                  
-                                  const lkItem = results[lk];
-                                  const sameType = lkItem.type === item.type;
-                                  const sameThickness = String(lkItem.thickness) === String(item.thickness);
-                                  const normStr = (s?: string) =>
-                                    (s || "").replace(/\|/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
-                                  const sameColor = normStr(lkItem.color) !== "" && normStr(lkItem.color) === normStr(item.color);
-                                  const sameDecor =
-                                    normStr(selectedDecor[lk]) !== "" &&
-                                    normStr(selectedDecor[lk]) === normStr(selectedDecor[key]);
-                                  
-                                  // Suggest merge if colors are same OR if user selected same decor
-                                  return sameThickness && sameType && (sameColor || sameDecor);
+                                  const compat = checkMaterialMergeCompatibility(key, lk);
+                                  return compat.canMerge && compat.mergeType === "ldsp_to_ldsp";
                                 }
                               )
-                              .map((lk) => (
+                              .map((lk) => {
+                                const lkItem = results[lk];
+                                const lkDecor = selectedDecor[lk] || lkItem.color || lkItem.name;
+                                return (
                                 <div
                                   key={lk}
                                   className="flex items-center justify-between p-3 bg-blue-50 rounded-xl border border-blue-100 mb-2"
@@ -7729,7 +7858,7 @@ const CalculatorView = ({
                                   <div className="flex items-center gap-2 text-sm text-blue-900">
                                     <Combine className="w-4 h-4 text-blue-600" />
                                     <span>
-                                      Материал совпадает с <strong>"{results[lk].color}"</strong> ({results[lk].thickness}мм).
+                                      Материал совпадает с <strong>"{lkDecor}"</strong> ({results[lk].thickness}мм).
                                       Объединить листы в один раскрой?
                                     </span>
                                   </div>
@@ -7741,13 +7870,14 @@ const CalculatorView = ({
                                           [lk]: key,
                                         }))
                                       }
-                                      className="px-4 py-1 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm"
+                                      className="px-4 py-1 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm cursor-pointer"
                                     >
                                       Объединить
                                     </button>
                                   </div>
                                 </div>
-                              ))}
+                              );
+                            })}
                             {mergedMaterials[key] && (
                                 <div className="flex items-center justify-between p-3 bg-green-50 rounded-xl border border-green-100 mb-2">
                                   <div className="flex items-center gap-2 text-sm text-green-900">
@@ -8503,8 +8633,7 @@ const CalculatorView = ({
                         )}
 
                         {/* Merge Logic for Sheet Facades (including LDSP facades matching LDSP body) */}
-                        {(facadeType[key] || "sheet") === "sheet" &&
-                          (selectedDecor[key] || item.color) && (
+                        {(facadeType[key] || "sheet") === "sheet" && (
                             <div className="pt-2">
                               {Object.keys(results)
                                 .filter((lk) => {
@@ -8512,94 +8641,106 @@ const CalculatorView = ({
                                   if (mergedMaterials[key] && mergedMaterials[key] !== lk) return false;
                                   if (mergedMaterials[lk]) return false;
 
-                                  const lkItem = results[lk];
-                                  const sameThickness = String(lkItem.thickness) === String(item.thickness);
-                                  const normStr = (s?: string) =>
-                                    (s || "").replace(/\|/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
-                                  const facDecorNorm = normStr(selectedDecor[key] || item.color);
-                                  const lkDecorNorm = normStr(selectedDecor[lk] || lkItem.color);
-                                  const sameDecor = facDecorNorm !== "" && facDecorNorm === lkDecorNorm;
-                                  const compatibleType =
-                                    lkItem.type === "ЛДСП" ||
-                                    lkItem.type === "МДФ" ||
-                                    lkItem.type === "Фасад";
-
-                                  return sameThickness && sameDecor && compatibleType;
+                                  const compat = checkMaterialMergeCompatibility(key, lk);
+                                  return compat.canMerge;
                                 })
-                                .map((lk) => (
-                                  <div
-                                    key={lk}
-                                    className={cn(
-                                      "flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border mb-3",
-                                      mergedMaterials[key] === lk
-                                        ? "bg-emerald-50 border-emerald-200"
-                                        : "bg-blue-50 border-blue-200",
-                                    )}
-                                  >
-                                    <div className="flex items-start gap-2.5 text-sm">
-                                      <Combine
-                                        className={cn(
-                                          "w-4 h-4 mt-0.5 shrink-0",
-                                          mergedMaterials[key] === lk
-                                            ? "text-emerald-600"
-                                            : "text-blue-600",
-                                        )}
-                                      />
-                                      <div className={mergedMaterials[key] === lk ? "text-emerald-900" : "text-blue-900"}>
+                                .map((lk) => {
+                                  const compat = checkMaterialMergeCompatibility(key, lk);
+                                  const isFacadeMerge = compat.mergeType === "facade_to_facade";
+                                  const lkItem = results[lk];
+                                  const lkDecorName = selectedDecor[lk] || lkItem.color || lkItem.name;
+                                  const keyDecorName = selectedDecor[key] || item.color || item.name;
+
+                                  return (
+                                    <div
+                                      key={lk}
+                                      className={cn(
+                                        "flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border mb-3",
+                                        mergedMaterials[key] === lk
+                                          ? "bg-emerald-50 border-emerald-200"
+                                          : "bg-blue-50 border-blue-200",
+                                      )}
+                                    >
+                                      <div className="flex items-start gap-2.5 text-sm">
+                                        <Combine
+                                          className={cn(
+                                            "w-4 h-4 mt-0.5 shrink-0",
+                                            mergedMaterials[key] === lk
+                                              ? "text-emerald-600"
+                                              : "text-blue-600",
+                                          )}
+                                        />
+                                        <div className={mergedMaterials[key] === lk ? "text-emerald-900" : "text-blue-900"}>
+                                          {mergedMaterials[key] === lk ? (
+                                            isFacadeMerge ? (
+                                              <>
+                                                <span className="font-bold">Раскрой фасадов объединен</span> с другим фасадом{" "}
+                                                <strong>«{lkDecorName}»</strong>.
+                                                <div className="text-xs text-emerald-700 mt-0.5">
+                                                  Листы фасадов считаются в едином совместном раскрое.
+                                                </div>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <span className="font-bold">Раскрой фасадов объединен с ЛДСП корпуса</span>{" "}
+                                                <strong>«{lkDecorName}»</strong>.
+                                                <div className="text-xs text-emerald-700 mt-0.5">
+                                                  Листы считаются в общем раскрое ЛДСП. В спецификации проекта сохраняется информация о фасадах («{keyDecorName}»), а кромка фасадов выводится отдельной строкой с пометкой «(для Фасадов)».
+                                                </div>
+                                              </>
+                                            )
+                                          ) : (
+                                            isFacadeMerge ? (
+                                              <>
+                                                Бренд и декор совпадают с другим фасадом{" "}
+                                                <strong>«{lkDecorName}»</strong> ({lkItem.thickness} мм).
+                                                <div className="text-xs text-blue-700 mt-0.5">
+                                                  Объединить раскрой фасадов в один материал (листы будут кроиться вместе)?
+                                                </div>
+                                              </>
+                                            ) : (
+                                              <>
+                                                Фасад из ЛДСП совпадает по бренду и декору с материалом корпуса (ЛДСП){" "}
+                                                <strong>«{lkDecorName}»</strong> ({lkItem.thickness} мм).
+                                                <div className="text-xs text-blue-700 mt-0.5">
+                                                  Объединить раскрой и считать всё как ЛДСП (с сохранением фасадов в спецификации и отдельной кромкой для фасадов)?
+                                                </div>
+                                              </>
+                                            )
+                                          )}
+                                        </div>
+                                      </div>
+                                      <div className="flex gap-2 shrink-0">
                                         {mergedMaterials[key] === lk ? (
-                                          <>
-                                            <span className="font-bold">Раскрой фасадов объединен с ЛДСП корпуса</span>{" "}
-                                            <strong>«{selectedDecor[lk] || results[lk].color || results[lk].name}»</strong>.
-                                            <div className="text-xs text-emerald-700 mt-0.5">
-                                              Листы считаются в общем раскрое ЛДСП. В спецификации проекта сохраняется информация о фасадах («{selectedDecor[key] || item.color}»), а кромка фасадов выводится отдельной строкой с пометкой «(для Фасадов)».
-                                            </div>
-                                          </>
+                                          <button
+                                            onClick={() =>
+                                              setMergedMaterials((prev) => {
+                                                const next = { ...prev };
+                                                delete next[key];
+                                                return next;
+                                              })
+                                            }
+                                            className="px-3 py-1.5 bg-white text-emerald-700 border border-emerald-300 rounded-lg text-xs font-bold hover:bg-emerald-100 cursor-pointer"
+                                          >
+                                            Отменить объединение
+                                          </button>
                                         ) : (
-                                          <>
-                                            Бренд и декор совпадают с материалом{" "}
-                                            {results[lk].type === "Фасад"
-                                              ? "другого фасада"
-                                              : results[lk].type === "ЛДСП"
-                                                ? "корпуса (ЛДСП)"
-                                                : "плиты (МДФ)"}{" "}
-                                            <strong>«{selectedDecor[lk] || results[lk].color || results[lk].name}»</strong> ({results[lk].thickness} мм).
-                                            <div className="text-xs text-blue-700 mt-0.5">
-                                              Объединить раскрой и считать всё как ЛДСП (с сохранением фасадов в спецификации и отдельной кромкой для фасадов)?
-                                            </div>
-                                          </>
+                                          <button
+                                            onClick={() =>
+                                              setMergedMaterials((prev) => ({
+                                                ...prev,
+                                                [key]: lk,
+                                              }))
+                                            }
+                                            className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm cursor-pointer"
+                                          >
+                                            {isFacadeMerge ? "Объединить раскрой фасадов" : "Объединить раскрой в ЛДСП"}
+                                          </button>
                                         )}
                                       </div>
                                     </div>
-                                    <div className="flex gap-2 shrink-0">
-                                      {mergedMaterials[key] === lk ? (
-                                        <button
-                                          onClick={() =>
-                                            setMergedMaterials((prev) => {
-                                              const next = { ...prev };
-                                              delete next[key];
-                                              return next;
-                                            })
-                                          }
-                                          className="px-3 py-1.5 bg-white text-emerald-700 border border-emerald-300 rounded-lg text-xs font-bold hover:bg-emerald-100 cursor-pointer"
-                                        >
-                                          Отменить объединение
-                                        </button>
-                                      ) : (
-                                        <button
-                                          onClick={() =>
-                                            setMergedMaterials((prev) => ({
-                                              ...prev,
-                                              [key]: lk,
-                                            }))
-                                          }
-                                          className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm cursor-pointer"
-                                        >
-                                          Объединить раскрой в ЛДСП
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                             </div>
                           )}
 
@@ -8947,8 +9088,11 @@ const CalculatorView = ({
                          <div className="flex items-center gap-3">
                             <Combine className="w-5 h-5 text-gray-400" />
                             <div>
-                               <h3 className="font-bold text-gray-700">{item.name} ({item.color})</h3>
-                               <p className="text-sm text-gray-500">Объединено с <strong>{targetItem?.color || "другим листом"}</strong></p>
+                               <h3 className="font-bold text-gray-700">{item.name} ({selectedDecor[key] || item.color})</h3>
+                               <p className="text-sm text-gray-500">
+                                 Объединено в общий раскрой с {targetItem?.type === "Фасад" ? "фасадом" : "ЛДСП корпуса"}{" "}
+                                 <strong>«{selectedDecor[targetKey] || targetItem?.color || targetItem?.name || "другим материалом"}»</strong>
+                               </p>
                             </div>
                          </div>
                          <button
@@ -12035,8 +12179,12 @@ const SummaryView = ({
             let displayQty = `${buyLen} м`;
             let edgeSubText = group.decor;
             if (extraMeters > 0) {
-              displayQty = `${buyLen} м (+${extraMeters} м, кратность покупки)`;
-              edgeSubText = `${group.decor} (+${extraMeters} м, кратность покупки ${multiplicity} м)`;
+              displayQty = `${buyLen} м`;
+              const workInfo =
+                effectiveCalcMode !== "coefficients" && !includeEdgeWork && edgeWorkPrice > 0
+                  ? `; работа: ${edgeLenRounded} м × ${edgeWorkPrice} ₽/м`
+                  : "";
+              edgeSubText = `${group.decor} (${edgeLenRounded}+${extraMeters} м, кратность покупки ${multiplicity} м${workInfo})`;
             } else if (effectiveCalcMode !== "coefficients" && !includeEdgeWork && edgeWorkPrice > 0) {
               edgeSubText = `${group.decor} (работа: ${edgeLenRounded} м × ${edgeWorkPrice} ₽/м)`;
             }
@@ -12075,10 +12223,11 @@ const SummaryView = ({
             const facDecor = selectedDecor[ck] || facItem.color || decor || "Не выбран";
             const facEdgeTh = edgeThickness[ck] || "1.0";
             const facEdgeDec = edgeDecor[ck] || "";
+            const isTargetLdsp = results[key]?.type === "ЛДСП";
             rows.push({
               type: "facade",
-              name: "Фасад (ЛДСП)",
-              sub: `${facItem.thickness} мм, в раскрое корпуса${facEdgeDec ? `, кромка ${facEdgeTh} мм (${facEdgeDec})` : ""}`,
+              name: isTargetLdsp ? "Фасад (ЛДСП)" : "Фасад",
+              sub: `${facItem.thickness} мм, в ${isTargetLdsp ? "раскрое корпуса" : "общем раскрое фасадов"}${facEdgeDec ? `, кромка ${facEdgeTh} мм (${facEdgeDec})` : ""}`,
               decor: facDecor,
               qty: `${Number(facItem.area || 0).toFixed(2)} м²`,
               price: 0,
