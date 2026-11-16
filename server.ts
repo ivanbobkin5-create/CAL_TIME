@@ -2538,8 +2538,63 @@ function transliterate(str: string): string {
       
       let docs: any[] = [];
       const localList = localStore.getCollection(colPath);
-      
-      if (localList.length > 0) {
+      const shouldMergeWithPostgres =
+        isPostgresAvailable &&
+        (colPath === "companies" || colPath === "users" || localList.length === 0) &&
+        !colPath.endsWith("/products");
+
+      if (shouldMergeWithPostgres) {
+        const byPath = new Map<string, any>();
+        for (const d of localList) {
+          byPath.set(d.path, {
+            id: d.id,
+            docId: d.docId,
+            collection: d.collection,
+            path: d.path,
+            data: d.data
+          });
+        }
+
+        try {
+          let pgDocs: any[] = [];
+          if (colPath === "companies") {
+            pgDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({ 
+              where: { 
+                collection: "companies",
+                path: { not: { contains: "/products" } }
+              } 
+            }));
+            pgDocs = pgDocs.filter(d => d.path.split("/").filter(Boolean).length === 2);
+          } else {
+            pgDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({ where: { collection: colPath } }));
+          }
+
+          for (const d of pgDocs) {
+            localStore.setDoc(d.path, d.collection, d.docId || d.id, d.data, false, false);
+            byPath.set(d.path, {
+              id: d.id,
+              docId: d.docId || d.id,
+              collection: d.collection,
+              path: d.path,
+              data: d.data
+            });
+          }
+
+          // When loading companies, also ensure users are synced from Postgres so ownerEmail/ownerName can be enriched
+          if (colPath === "companies") {
+            try {
+              const pgUsers = await dbQueryWithRetry(() => prisma.dbDocument.findMany({ where: { collection: "users" } }));
+              for (const u of pgUsers) {
+                localStore.setDoc(u.path, u.collection, u.docId || u.id, u.data, false, false);
+              }
+            } catch (_) {}
+          }
+        } catch {
+          // Fall back to localList already in byPath
+        }
+
+        docs = Array.from(byPath.values());
+      } else if (localList.length > 0) {
         docs = localList.map(d => ({
           id: d.id,
           docId: d.docId,
@@ -2547,26 +2602,6 @@ function transliterate(str: string): string {
           path: d.path,
           data: d.data
         }));
-      } else if (isPostgresAvailable) {
-        try {
-          if (colPath === "companies") {
-            docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({ 
-              where: { 
-                collection: "companies",
-                path: { not: { contains: "/products" } }
-              } 
-            }));
-            docs = docs.filter(d => d.path.split("/").filter(Boolean).length === 2);
-          } else {
-            docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({ where: { collection: colPath } }));
-          }
-
-          for (const d of docs) {
-            localStore.setDoc(d.path, d.collection, d.docId || d.id, d.data, false, false);
-          }
-        } catch {
-          // Fall through
-        }
       }
 
       let mapped = docs.map(d => {
@@ -2584,8 +2619,60 @@ function transliterate(str: string): string {
       });
       
       if (colPath === "companies") {
+        // Filter out internal system placeholder and automated test fixtures
+        mapped = mapped.filter(m => {
+          const cid = String(m.id || "");
+          if (!cid || cid === "system" || cid.startsWith("test_comp_") || cid.startsWith("smoke_comp_")) {
+            return false;
+          }
+          return true;
+        });
+
+        // Build user lookup map to enrich ownerEmail / ownerName on companies
+        const allUserDocs = localStore.getCollection("users");
+        const usersByUid = new Map<string, any>();
+        const adminUsersByCompany = new Map<string, any>();
+        for (const uDoc of allUserDocs) {
+          try {
+            const uData = typeof uDoc.data === "string" ? JSON.parse(uDoc.data) : (uDoc.data || {});
+            const uid = uDoc.docId || uDoc.id || uData.uid || uData.id;
+            if (uid) usersByUid.set(String(uid), uData);
+            if (uData.companyId) {
+              const existing = adminUsersByCompany.get(String(uData.companyId));
+              if (!existing || uData.role === "admin") {
+                adminUsersByCompany.set(String(uData.companyId), { uid, ...uData });
+              }
+            }
+          } catch (_) {}
+        }
+
         mapped.forEach(m => {
-          if (m.data && (!m.data.companyInfo || !m.data.companyInfo.inn)) {
+          if (!m.data) m.data = {};
+          const ownerUser =
+            (m.data.ownerUid && usersByUid.get(String(m.data.ownerUid))) ||
+            adminUsersByCompany.get(String(m.id));
+
+          if (ownerUser) {
+            if (!m.data.ownerEmail && ownerUser.email) {
+              m.data.ownerEmail = ownerUser.email;
+            }
+            if (!m.data.ownerName && (ownerUser.displayName || ownerUser.name || ownerUser.companyName)) {
+              m.data.ownerName = ownerUser.displayName || ownerUser.name || ownerUser.companyName;
+            }
+            if (!m.data.phone && ownerUser.phone) {
+              m.data.phone = ownerUser.phone;
+            }
+            if (!m.data.name && ownerUser.companyName) {
+              m.data.name = ownerUser.companyName;
+            }
+          }
+
+          if (!m.data.name && String(m.id).startsWith("b24_")) {
+            const domainPart = String(m.id).replace(/^b24_/, "").replace(/_/g, ".");
+            m.data.name = `Компания (${domainPart})`;
+          }
+
+          if (!m.data.companyInfo || !m.data.companyInfo.inn) {
             const genDoc = localStore.getDoc(`companies/${m.id}/settings/general`);
             if (genDoc) {
               try {
@@ -2627,6 +2714,14 @@ function transliterate(str: string): string {
           mapped.unshift(defaultComp);
           localStore.setDoc("companies/e5om9lzxh", "companies", "e5om9lzxh", JSON.stringify(defaultComp.data), false, false);
         }
+      } else if (colPath === "users") {
+        mapped = mapped.filter(m => {
+          const uid = String(m.id || "");
+          if (!uid || uid.startsWith("smoke_uid_") || uid.startsWith("test_uid_") || uid === "admin-ivan-bobkin") {
+            return false;
+          }
+          return Boolean(m.data?.email || m.data?.name || m.data?.displayName);
+        });
       }
 
       // If fetching a products collection, strip heavy images for high-speed, lightweight delivery while preserving hasImage
