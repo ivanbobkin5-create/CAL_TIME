@@ -1,0 +1,34 @@
+6573:  hingeType?: string;
+6580:    fit.hingeType || "",
+6588:  const [category, hingeType, depth, width, drawerSubCategory] = key.split("::");
+6591:    hingeType: hingeType || undefined,
+7401:        let defaultFits: { category: string; qty: number; hingeType?: string; depth?: string; width?: string }[] = [];
+7404:            { category: "Петли", qty: 2, hingeType: "Накладная" },
+7410:            { category: "Петли", qty: 2, hingeType: "Накладная" },
+7416:            { category: "Петли", qty: 4, hingeType: "Накладная" },
+7451:          const hingeToUse = fitParams.hingeType && fitParams.hingeType !== "" ? fitParams.hingeType : "Накладная";
+7452:          inCat = inCat.filter((p: any) => p.hingeType === hingeToUse);
+7496:        if (category === "Петли" && fitParams.hingeType) {
+7497:          customSub = `${category} (${fitParams.hingeType})`;
+8572:              if (cat === "Петли" && fitParams.hingeType) {
+8574:                  const aMatch = a.hingeType === fitParams.hingeType ? 1 : 0;
+8575:                  const bMatch = b.hingeType === fitParams.hingeType ? 1 : 0;
+13119:  const [hingeTypeFilter, setHingeTypeFilter] = useState<string | null>(null);
+13220:        if (stdCategoryFilter === "Петли" && p.hingeType) {
+13221:          subs.add(p.hingeType);
+13238:        matchSub = p.hingeType === stdSubCategoryFilter;
+13302:    hingeType: "Накладная" as "Накладная" | "Полунакладная" | "Вкладная",
+13315:      hingeType?: string; 
+13568:      hingeType: "Накладная",
+13620:      hingeType: product.hingeType || "Накладная",
+13705:      if (selectedCategory === "Петли" && hingeTypeFilter) {
+13706:        matchesHingeType = p.hingeType === hingeTypeFilter;
+13821:    hingeTypeFilter,
+14108:                  hingeTypeFilter === type ||
+14109:                    (type === "Все" && !hingeTypeFilter)
+15023:                                          ...(val === "Петли" ? { hingeType: "Накладная" } : {}),
+15073:                                            value={fit.hingeType || "Накладная"}
+15076:                                              updated[idx] = { ...updated[idx], hingeType: e.target.value };
+15724:                          value={newProduct.hingeType}
+15728:                              hingeType: e.target.value as any,
+22297:                                {selectedProductForDetail.hingeType || "—"}

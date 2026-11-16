@@ -1,0 +1,945 @@
+import React, { useState } from 'react';
+import { 
+  Factory, 
+  Search, 
+  ChevronRight, 
+  ChevronLeft, 
+  Clock, 
+  Layers, 
+  Scissors, 
+  Wrench, 
+  CheckCircle2, 
+  Package, 
+  AlertTriangle, 
+  FileText, 
+  Printer, 
+  User, 
+  X,
+  Play,
+  Check,
+  ExternalLink,
+  ArrowLeft,
+  Calendar,
+  Box,
+  Flame,
+  UserCheck,
+  Camera,
+  Sparkles,
+  Truck,
+  Lock
+} from 'lucide-react';
+import { ProductionOrder, ProductionStageId, ERPEmployee, ERPCompanySettings } from '../types';
+import { formatDeadlineDate, getNextRequiredStage, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl, getSmartOrderDisplay } from '../utils';
+import { getStageTaskReadinessInfo, getStageScannedPiecesCount, isStageRequiredForOrder } from '../utils/stageReadiness';
+import { ERPOrderDetailsModal } from './ERPOrderDetailsModal';
+import { ERPDispatchView } from './ERPDispatchView';
+import { MobileCameraScannerModal } from '../components/MobileCameraScannerModal';
+import { ReportDefectModal } from '../components/ReportDefectModal';
+import { ShiftSummaryModal } from '../components/ShiftSummaryModal';
+
+interface ERPProductionViewProps {
+  orders: ProductionOrder[];
+  employees: ERPEmployee[];
+  settings?: ERPCompanySettings;
+  companyName?: string;
+  companyId?: string;
+  currentUser?: any;
+  initialStageId?: ProductionStageId | null;
+  onStageChange?: (stageId: ProductionStageId | null) => void;
+  onUpdateOrderStatus: (orderId: string, nextStage: ProductionStageId) => void;
+  onUpdateOrder?: (updatedOrder: ProductionOrder) => void;
+  onSelectOrder: (order: ProductionOrder, stageId?: ProductionStageId) => void;
+}
+
+export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
+  orders,
+  employees,
+  settings,
+  companyName,
+  companyId,
+  currentUser,
+  initialStageId,
+  onStageChange,
+  onUpdateOrderStatus,
+  onUpdateOrder,
+  onSelectOrder
+}) => {
+  const [search, setSearch] = useState('');
+  const [selectedStageId, setSelectedStageId] = useState<ProductionStageId | null>(initialStageId ?? null);
+
+  React.useEffect(() => {
+    if (initialStageId !== undefined) {
+      setSelectedStageId(initialStageId);
+    }
+  }, [initialStageId]);
+
+  const handleStageSelect = (stageId: ProductionStageId | null) => {
+    setSelectedStageId(stageId);
+    if (onStageChange) onStageChange(stageId);
+  };
+  const [stageTabFilter, setStageTabFilter] = useState<'all' | 'overdue' | 'today' | 'tomorrow' | 'future'>('all');
+  const [selectedOrderDetails, setSelectedOrderDetails] = useState<ProductionOrder | null>(null);
+  const [showCameraScannerModal, setShowCameraScannerModal] = useState<boolean>(false);
+  const [cameraScanFeedback, setCameraScanFeedback] = useState<string | null>(null);
+  const [showShiftModal, setShowShiftModal] = useState<boolean>(false);
+  const [reportingDefectDetail, setReportingDefectDetail] = useState<{ order: ProductionOrder; detail: any } | null>(null);
+
+  const allStages: { id: ProductionStageId; name: string; icon: any; color: string; badgeColor: string; bgGradient: string }[] = [
+    { id: 'cutting', name: 'Участок раскроя (Распил)', icon: Scissors, color: 'text-blue-600 border-blue-200 bg-blue-50', badgeColor: 'bg-blue-600 text-white', bgGradient: 'from-blue-50/50 to-white' },
+    { id: 'edging', name: 'Участок кромкооблицовки', icon: Layers, color: 'text-indigo-600 border-indigo-200 bg-indigo-50', badgeColor: 'bg-indigo-600 text-white', bgGradient: 'from-indigo-50/50 to-white' },
+    { id: 'cnc', name: 'Участок присадки / ЧПУ', icon: Factory, color: 'text-purple-600 border-purple-200 bg-purple-50', badgeColor: 'bg-purple-600 text-white', bgGradient: 'from-purple-50/50 to-white' },
+    { id: 'facades', name: 'Фасадный участок / Покраска', icon: Wrench, color: 'text-amber-600 border-amber-200 bg-amber-50', badgeColor: 'bg-amber-600 text-white', bgGradient: 'from-amber-50/50 to-white' },
+    { id: 'assembly', name: 'Участок сборки', icon: Wrench, color: 'text-teal-600 border-teal-200 bg-teal-50', badgeColor: 'bg-teal-600 text-white', bgGradient: 'from-teal-50/50 to-white' },
+    { id: 'kitting', name: 'Участок комплектовки', icon: Box, color: 'text-cyan-600 border-cyan-200 bg-cyan-50', badgeColor: 'bg-cyan-600 text-white', bgGradient: 'from-cyan-50/50 to-white' },
+    { id: 'qc', name: 'Контроль ОТК', icon: CheckCircle2, color: 'text-emerald-600 border-emerald-200 bg-emerald-50', badgeColor: 'bg-emerald-600 text-white', bgGradient: 'from-emerald-50/50 to-white' },
+    { id: 'packing', name: 'Упаковка и склад', icon: Package, color: 'text-orange-600 border-orange-200 bg-orange-50', badgeColor: 'bg-orange-600 text-white', bgGradient: 'from-orange-50/50 to-white' },
+    { id: 'shipping', name: 'Участок отгрузки и доставки', icon: Truck, color: 'text-emerald-700 border-emerald-200 bg-emerald-50', badgeColor: 'bg-emerald-700 text-white', bgGradient: 'from-emerald-50/50 to-white' }
+  ];
+
+  const enabledStageIds = settings?.enabledStages || allStages.map(s => s.id);
+  const stages = (settings?.enabledStages && settings.enabledStages.length > 0)
+    ? settings.enabledStages
+        .map(id => allStages.find(s => s.id === id))
+        .filter((s): s is typeof allStages[0] => !!s)
+    : allStages.filter(s => enabledStageIds.includes(s.id));
+
+  // Date categorization helpers
+  const todayStr = new Date().toISOString().split('T')[0];
+  const tomorrowObj = new Date();
+  tomorrowObj.setDate(tomorrowObj.getDate() + 1);
+  const tomorrowStr = tomorrowObj.toISOString().split('T')[0];
+
+  const getOrderPlannedDate = (order: ProductionOrder, stageId?: ProductionStageId | null): string => {
+    if (stageId && order.stagePlannedDates?.[stageId]) {
+      return order.stagePlannedDates[stageId];
+    }
+    return order.plannedCuttingDate || order.plannedStartDate || '';
+  };
+
+  const getOrderDateCategory = (order: ProductionOrder, stageId?: ProductionStageId | null): 'overdue' | 'today' | 'tomorrow' | 'future' => {
+    const planned = getOrderPlannedDate(order, stageId);
+    if (!planned) return 'today';
+    if (planned < todayStr) return 'overdue';
+    if (planned === todayStr) return 'today';
+    if (planned === tomorrowStr) return 'tomorrow';
+    return 'future';
+  };
+
+  // Strict date-ordered sorting: Overdue (0) -> Today (1) -> Tomorrow (2) -> Future (3, sorted by exact date ASC) -> Unscheduled
+  const sortOrdersByPlannedDate = (ordersList: ProductionOrder[], stageId?: ProductionStageId | null): ProductionOrder[] => {
+    const categoryWeight = (cat: 'overdue' | 'today' | 'tomorrow' | 'future'): number => {
+      switch (cat) {
+        case 'overdue': return 0;
+        case 'today': return 1;
+        case 'tomorrow': return 2;
+        case 'future': return 3;
+        default: return 4;
+      }
+    };
+
+    return [...ordersList].sort((a, b) => {
+      const catA = getOrderDateCategory(a, stageId);
+      const catB = getOrderDateCategory(b, stageId);
+      const weightA = categoryWeight(catA);
+      const weightB = categoryWeight(catB);
+
+      if (weightA !== weightB) {
+        return weightA - weightB;
+      }
+
+      const dateA = getOrderPlannedDate(a, stageId);
+      const dateB = getOrderPlannedDate(b, stageId);
+
+      if (dateA && dateB) {
+        const cmp = dateA.localeCompare(dateB);
+        if (cmp !== 0) return cmp;
+      } else if (dateA && !dateB) {
+        return -1;
+      } else if (!dateA && dateB) {
+        return 1;
+      }
+
+      return (a.orderNumber || '').localeCompare(b.orderNumber || '', undefined, { numeric: true });
+    });
+  };
+
+  const resolveEmployeeName = (idOrName?: string | null, fallbackOrder?: ProductionOrder, stageId?: ProductionStageId): string => {
+    if (idOrName && idOrName.trim() && idOrName !== 'Сотрудник' && idOrName !== 'Мастер смены') {
+      const found = employees.find(e => e.id === idOrName || e.name.toLowerCase() === idOrName.toLowerCase());
+      if (found) return found.name;
+      return idOrName;
+    }
+    if (fallbackOrder) {
+      if (stageId && fallbackOrder.stageProgress?.[stageId]?.completedBy) {
+        const by = fallbackOrder.stageProgress[stageId].completedBy;
+        const found = employees.find(e => e.id === by || e.name.toLowerCase() === by.toLowerCase());
+        if (found) return found.name;
+        if (by && by !== 'Сотрудник' && by !== 'Мастер смены') return by;
+      }
+      if (fallbackOrder.responsibleEmployeeName && fallbackOrder.responsibleEmployeeName !== 'Сотрудник' && fallbackOrder.responsibleEmployeeName !== 'Мастер смены') {
+        const found = employees.find(e => e.id === fallbackOrder.responsibleEmployeeName || e.name.toLowerCase() === fallbackOrder.responsibleEmployeeName.toLowerCase());
+        if (found) return found.name;
+        return fallbackOrder.responsibleEmployeeName;
+      }
+    }
+    return '';
+  };
+
+  const STAGE_ORDER: ProductionStageId[] = ['queue', 'cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing', 'shipping', 'ready'];
+
+  // Helper to check if order belongs to a specific production stage
+  const isOrderOnStage = (order: ProductionOrder, stageId: ProductionStageId): boolean => {
+    // Completed or shipped orders are no longer active on production stations
+    if (order.status === 'shipped' || order.status === 'completed' || order.isDeleted) {
+      return false;
+    }
+    // If this stage is excluded from this order's route (e.g. no edge, no holes, no hardware)
+    if (!isStageRequiredForOrder(order, stageId, settings)) {
+      return false;
+    }
+    // If this specific stage is already marked as done on the order, it should not be listed on this stage
+    if (order.stageProgress?.[stageId]?.status === 'done') {
+      return false;
+    }
+
+    const currentIdx = STAGE_ORDER.indexOf(order.currentStage);
+    const targetIdx = STAGE_ORDER.indexOf(stageId);
+
+    // Specific condition for shipping stage:
+    // Order MUST NOT appear on shipping stage until packaging is completed!
+    if (stageId === 'shipping') {
+      const isPackingDone = 
+        order.currentStage === 'shipping' ||
+        order.currentStage === 'ready' ||
+        order.stageProgress?.packing?.status === 'done' ||
+        !!order.forcedStageCompletions?.packing ||
+        ((order.packages || []).length > 0 && (order.partsCount || 0) > 0 && 
+         (order.packages || []).reduce((sum, p) => sum + (p.parts?.length || 0), 0) >= (order.partsCount || 0));
+
+      if (!isPackingDone) {
+        return false;
+      }
+      return order.currentStage === 'shipping' || order.currentStage === 'ready' || !!order.stagePlannedDates?.['shipping'];
+    }
+
+    // If order's current stage has already moved beyond stageId in the production flow,
+    // this stage is completed and must not be listed as an active task on this workstation!
+    if (currentIdx !== -1 && targetIdx !== -1 && currentIdx > targetIdx) {
+      if (stageId !== 'kitting' && stageId !== 'packing') {
+        return false;
+      }
+    }
+
+    if (order.currentStage === 'shipping' || order.currentStage === 'ready') {
+      return stageId === 'ready';
+    }
+    if (order.currentStage === stageId) return true;
+    if (stageId === 'kitting' || stageId === 'packing') {
+      const onlinePackagingAllowedStages: ProductionStageId[] = ['cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing'];
+      if (onlinePackagingAllowedStages.includes(order.currentStage)) {
+        return true;
+      }
+    }
+    // Only consider planned date if stage is not done and order has not progressed past it
+    if (order.stagePlannedDates && order.stagePlannedDates[stageId] && (currentIdx === -1 || targetIdx >= currentIdx)) {
+      return true;
+    }
+    if (stageId === 'cutting' && !!order.plannedCuttingDate && (currentIdx <= STAGE_ORDER.indexOf('cutting'))) {
+      return true;
+    }
+
+    return false;
+  };
+
+  // Filter orders in production (must be ready or in progress or scheduled on calendar, and NOT deleted)
+  const productionOrders = orders.filter(o => 
+    !o.isDeleted &&
+    (o.isReadyForProduction || 
+     o.status === 'in_progress' || 
+     (o.currentStage && o.currentStage !== 'queue') || 
+     !!o.plannedCuttingDate || 
+     (o.stagePlannedDates && Object.keys(o.stagePlannedDates).length > 0)) &&
+    o.status !== 'completed' &&
+    o.status !== 'shipped' &&
+    (o.orderNumber.toLowerCase().includes(search.toLowerCase()) ||
+     o.clientName.toLowerCase().includes(search.toLowerCase()) ||
+     o.projectName.toLowerCase().includes(search.toLowerCase()))
+  );
+
+  // Helper to count total scanned parts across all stages
+  const countTotalScannedParts = (ord: ProductionOrder): number => {
+    let count = 0;
+    if (ord.stageScanningProgress) {
+      Object.values(ord.stageScanningProgress).forEach(stg => {
+        if (stg) {
+          Object.values(stg).forEach(mat => {
+            if (mat?.scannedPartIds) count += mat.scannedPartIds.length;
+          });
+        }
+      });
+    }
+    return count;
+  };
+
+  // Keep selectedOrderDetails in sync with polled/updated parent orders
+  React.useEffect(() => {
+    if (selectedOrderDetails) {
+      const updated = orders.find(o => o.id === selectedOrderDetails.id);
+      if (updated) {
+        const curScanned = countTotalScannedParts(selectedOrderDetails);
+        const newScanned = countTotalScannedParts(updated);
+
+        const metadataChanged = 
+          updated.currentStage !== selectedOrderDetails.currentStage ||
+          updated.status !== selectedOrderDetails.status ||
+          (updated.birkaData?.fileHash || updated.birkaData?.uploadedAt || '') !== (selectedOrderDetails.birkaData?.fileHash || selectedOrderDetails.birkaData?.uploadedAt || '') ||
+          (updated.packages || []).length !== (selectedOrderDetails.packages || []).length ||
+          (updated.workLogs || []).length !== (selectedOrderDetails.workLogs || []).length;
+
+        // Only overwrite selectedOrderDetails if metadata changed or if updated from parent has MORE scanned parts
+        if (metadataChanged || newScanned > curScanned) {
+          setSelectedOrderDetails(updated);
+        }
+      }
+    }
+  }, [orders]);
+
+  // Stage details view
+  const activeStage = stages.find(s => s.id === selectedStageId);
+
+  const handleCameraScanOrder = (scannedCode: string) => {
+    let rawCode = scannedCode.trim().toLowerCase();
+    if (rawCode.includes('/p/')) {
+      rawCode = rawCode.split('/p/').pop()?.split('?')[0] || rawCode;
+    } else if (rawCode.includes('/package/')) {
+      rawCode = rawCode.split('/package/').pop()?.split('?')[0] || rawCode;
+    } else if (rawCode.includes('/pkg/')) {
+      rawCode = rawCode.split('/pkg/').pop()?.split('?')[0] || rawCode;
+    } else if (rawCode.includes('/')) {
+      rawCode = rawCode.split('/').pop()?.split('?')[0] || rawCode;
+    }
+
+    const cleanCode = rawCode.trim().toLowerCase();
+    const foundOrder = orders.find(o => {
+      if (o.isDeleted) return false;
+      if (o.id.toLowerCase() === cleanCode) return true;
+      if (o.orderNumber.toLowerCase() === cleanCode) return true;
+      if (o.orderNumber.toLowerCase().replace(/[^0-9a-zа-я]/g, '') === cleanCode.replace(/[^0-9a-zа-я]/g, '')) return true;
+      if (cleanCode.includes(o.orderNumber.toLowerCase())) return true;
+      if (o.orderNumber.toLowerCase().includes(cleanCode)) return true;
+      if (o.packages && o.packages.some(p => 
+        p.code?.toLowerCase() === cleanCode || 
+        p.id?.toLowerCase() === cleanCode || 
+        `pkg-${o.orderNumber}-${p.packageNumber}`.toLowerCase() === cleanCode ||
+        `pkg-${o.orderNumber}-m${p.packageNumber}`.toLowerCase() === cleanCode
+      )) return true;
+      return false;
+    });
+
+    if (foundOrder) {
+      setShowCameraScannerModal(false);
+      onSelectOrder(foundOrder);
+    } else {
+      setCameraScanFeedback(`Заказ с кодом "${scannedCode}" не найден в системе`);
+      setTimeout(() => setCameraScanFeedback(null), 4000);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Top Header & Search */}
+      <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-bold text-blue-600 uppercase tracking-wider mb-1">
+            <Factory className="w-4 h-4" /> Производственные участки
+          </div>
+          <h2 className="text-xl md:text-2xl font-black text-slate-900">
+            {selectedStageId ? activeStage?.name : 'Панель оператора участков цеха'}
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            {selectedStageId 
+              ? 'Список заказов на участке с возможностью взятия в работу и распределения выработки'
+              : 'Крупные карточки участков с раскладкой по просроченным, сегодняшним и будущим заказам'}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShowShiftModal(true)}
+            className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center gap-2 shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+            title="Посмотреть выработку за день и отчет смены"
+          >
+            <Clock className="w-4 h-4" />
+            <span>Итоги смены / Выработка</span>
+          </button>
+
+          {selectedStageId && (
+            <button
+              onClick={() => handleStageSelect(null)}
+              className="px-4 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Все участки</span>
+            </button>
+          )}
+
+          <div className="relative min-w-[240px]">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Поиск по номеру, клиенту..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
+            />
+          </div>
+        </div>
+      </div>
+
+      {cameraScanFeedback && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>{cameraScanFeedback}</span>
+        </div>
+      )}
+
+      {/* VIEW MODE 1: Large Department Cards Grid (When no stage selected) */}
+      {!selectedStageId ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {stages.map((stage) => {
+            const Icon = stage.icon;
+            const stageOrders = productionOrders.filter(o => isOrderOnStage(o, stage.id));
+
+            const overdueOrders = stageOrders.filter(o => getOrderDateCategory(o, stage.id) === 'overdue');
+            const todayOrders = stageOrders.filter(o => getOrderDateCategory(o, stage.id) === 'today');
+            const tomorrowOrders = stageOrders.filter(o => getOrderDateCategory(o, stage.id) === 'tomorrow');
+            const futureOrders = stageOrders.filter(o => getOrderDateCategory(o, stage.id) === 'future');
+
+            const totalArea = stageOrders.reduce((sum, o) => sum + (o.totalAreaM2 || 0), 0);
+            const totalParts = stageOrders.reduce((sum, o) => sum + (o.partsCount || 0), 0);
+            const totalEdge = stageOrders.reduce((sum, o) => sum + (o.totalEdgeM || 0), 0);
+            // Standard sheet size calculation (2.8m x 2.07m = ~5.796 m2, approx 5.0 - 5.5 m2 useful per sheet)
+            const approxSheets = (totalArea / 5.2).toFixed(1);
+
+            return (
+              <div
+                key={stage.id}
+                onClick={() => {
+                  handleStageSelect(stage.id);
+                  setStageTabFilter('all');
+                }}
+                className={`bg-gradient-to-br ${stage.bgGradient} rounded-3xl p-6 border border-slate-200/90 hover:border-blue-400 hover:shadow-lg transition-all cursor-pointer flex flex-col justify-between group space-y-5`}
+              >
+                {/* Header */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className={`w-11 h-11 rounded-2xl flex items-center justify-center border font-bold ${stage.color}`}>
+                      <Icon className="w-6 h-6" />
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-xs font-black font-mono shadow-sm ${stage.badgeColor}`}>
+                      {stageOrders.length} заказов
+                    </span>
+                  </div>
+
+                  <h3 className="font-black text-slate-900 text-base group-hover:text-blue-600 transition-colors">
+                    {stage.name}
+                  </h3>
+                  <div className="text-xs text-slate-500 mt-1 font-semibold space-y-0.5">
+                    {stage.id === 'cutting' ? (
+                      <p>
+                        Объем: <strong className="text-slate-800">{totalArea.toFixed(1)} м²</strong> (~<strong className="text-blue-700 font-bold">{approxSheets} лист.</strong>, {totalParts} дет.)
+                      </p>
+                    ) : stage.id === 'edging' ? (
+                      <p>
+                        Объем кромления: <strong className="text-indigo-700 font-bold">{totalEdge.toFixed(1)} п.м.</strong> ({totalParts} дет., {totalArea.toFixed(1)} м²)
+                      </p>
+                    ) : (
+                      <p>
+                        Общий объем: <strong className="text-slate-800">{totalArea.toFixed(1)} м²</strong> ({totalParts} деталей)
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* 4 Status Counters Tiles (Просрочено / На сегодня / На завтра / Будущие) */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  {/* Overdue */}
+                  <div className={`p-3 rounded-2xl border flex flex-col justify-between ${
+                    overdueOrders.length > 0 ? 'bg-red-50 border-red-200 text-red-900' : 'bg-slate-50/80 border-slate-100 text-slate-400'
+                  }`}>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1">
+                      <Flame className="w-3 h-3 text-red-500" /> Просрочено
+                    </span>
+                    <span className="text-xl font-black font-mono mt-1">
+                      {overdueOrders.length}
+                    </span>
+                  </div>
+
+                  {/* Today */}
+                  <div className={`p-3 rounded-2xl border flex flex-col justify-between ${
+                    todayOrders.length > 0 ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-slate-50/80 border-slate-100 text-slate-400'
+                  }`}>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1">
+                      <Calendar className="w-3 h-3 text-amber-500" /> На сегодня
+                    </span>
+                    <span className="text-xl font-black font-mono mt-1">
+                      {todayOrders.length}
+                    </span>
+                  </div>
+
+                  {/* Tomorrow */}
+                  <div className={`p-3 rounded-2xl border flex flex-col justify-between ${
+                    tomorrowOrders.length > 0 ? 'bg-blue-50 border-blue-200 text-blue-900' : 'bg-slate-50/80 border-slate-100 text-slate-400'
+                  }`}>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-blue-500" /> На завтра
+                    </span>
+                    <span className="text-xl font-black font-mono mt-1">
+                      {tomorrowOrders.length}
+                    </span>
+                  </div>
+
+                  {/* Future */}
+                  <div className={`p-3 rounded-2xl border flex flex-col justify-between ${
+                    futureOrders.length > 0 ? 'bg-slate-100 border-slate-200 text-slate-800' : 'bg-slate-50/80 border-slate-100 text-slate-400'
+                  }`}>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1">
+                      ⏳ Будущие
+                    </span>
+                    <span className="text-xl font-black font-mono mt-1">
+                      {futureOrders.length}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Bottom CTA */}
+                <div className="pt-3 border-t border-slate-200/60 flex items-center justify-between text-xs font-bold text-blue-600 group-hover:underline">
+                  <span>Перейти к заказам участка</span>
+                  <ChevronRight className="w-4 h-4" />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : selectedStageId === 'shipping' ? (
+        <ERPDispatchView 
+          orders={orders.filter(o => !o.isDeleted)} 
+          employees={employees} 
+          settings={settings}
+          companyName={companyName}
+          onUpdateOrder={onUpdateOrder || (() => {})}
+          onSelectOrder={(order) => onSelectOrder(order, 'shipping')}
+        />
+      ) : (
+        /* VIEW MODE 2: Selected Stage Orders List */
+        <div className="space-y-4">
+          {/* Stage Filter Tabs */}
+          <div className="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-sm flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => setStageTabFilter('all')}
+                className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                  stageTabFilter === 'all' ? 'bg-slate-900 text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Все заказы участка
+              </button>
+              <button
+                onClick={() => setStageTabFilter('overdue')}
+                className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  stageTabFilter === 'overdue' ? 'bg-red-600 text-white shadow-sm' : 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200'
+                }`}
+              >
+                <span>🚨 Просроченные</span>
+              </button>
+              <button
+                onClick={() => setStageTabFilter('today')}
+                className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  stageTabFilter === 'today' ? 'bg-amber-600 text-white shadow-sm' : 'bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200'
+                }`}
+              >
+                <span>📅 На сегодня</span>
+              </button>
+              <button
+                onClick={() => setStageTabFilter('tomorrow')}
+                className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  stageTabFilter === 'tomorrow' ? 'bg-blue-600 text-white shadow-sm' : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
+                }`}
+              >
+                <span>🌅 На завтра</span>
+              </button>
+              <button
+                onClick={() => setStageTabFilter('future')}
+                className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                  stageTabFilter === 'future' ? 'bg-slate-800 text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                ⏳ Будущие
+              </button>
+            </div>
+
+            <div className="text-xs text-slate-500 font-semibold">
+              Участок: <strong className="text-slate-900 font-bold">{activeStage?.name}</strong>
+            </div>
+          </div>
+
+          {/* Orders Cards List */}
+          {(() => {
+            const rawStageOrders = productionOrders.filter(o => selectedStageId ? isOrderOnStage(o, selectedStageId) : false);
+            const sortedStageOrders = sortOrdersByPlannedDate(rawStageOrders, selectedStageId);
+            const filteredByTab = sortedStageOrders.filter(o => {
+              if (stageTabFilter === 'all') return true;
+              return getOrderDateCategory(o, selectedStageId) === stageTabFilter;
+            });
+
+            if (filteredByTab.length === 0) {
+              return (
+                <div className="py-12 text-center bg-white rounded-3xl border border-dashed border-slate-200 p-8">
+                  <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-2" />
+                  <p className="text-sm font-bold text-slate-700">Заказы в выбранной категории отсутствуют</p>
+                  <p className="text-xs text-slate-400 mt-1">Все задачи этого типа выполнены или нет новых поступлений</p>
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-3">
+                {filteredByTab.map((order) => {
+                  const dateCat = getOrderDateCategory(order, selectedStageId);
+                  const dateBadgeStyles = {
+                    overdue: 'bg-red-100 text-red-800 border-red-300',
+                    today: 'bg-amber-100 text-amber-900 border-amber-300',
+                    tomorrow: 'bg-blue-100 text-blue-800 border-blue-300',
+                    future: 'bg-slate-100 text-slate-700 border-slate-300'
+                  }[dateCat];
+
+                  const dateCatText = {
+                    overdue: '🚨 Просрочен',
+                    today: '📅 На сегодня',
+                    tomorrow: '🌅 На завтра',
+                    future: '⏳ Будущие'
+                  }[dateCat];
+
+                  const works = order.additionalWorks;
+                  const activeLogs = order.workLogs?.filter(l => l.stageId === selectedStageId) || [];
+                  const taskReadiness = getStageTaskReadinessInfo(order, selectedStageId || order.currentStage, settings);
+
+                  const smartDisplay = getSmartOrderDisplay(order);
+                  const { clientName: clientNameClean, projectName: projectNameClean, displayTitle, isBitrixIdAsNumber } = smartDisplay;
+                  const isDuplicateName = !clientNameClean || !projectNameClean || projectNameClean.toLowerCase() === clientNameClean.toLowerCase() ||
+                    (projectNameClean && clientNameClean.toLowerCase().includes(projectNameClean.toLowerCase())) ||
+                    (clientNameClean && projectNameClean.toLowerCase().includes(clientNameClean.toLowerCase()));
+
+                  return (
+                    <div
+                      key={order.id}
+                      onClick={() => {
+                        if (taskReadiness.isLocked) {
+                          alert(`🔒 Задача по заказу ${displayTitle || order.orderNumber} заблокирована!\n\nПричина: ${taskReadiness.blockingReason}\n\nСотрудник на предыдущем участке еще не начал сканирование деталей. Как только первая деталь будет отсканирована на прошлом участке, задание автоматически разблокируется.`);
+                          return;
+                        }
+                        onSelectOrder(order, selectedStageId || order.currentStage);
+                      }}
+                      className={`rounded-3xl p-5 border transition-all shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4 ${
+                        taskReadiness.isLocked
+                          ? 'bg-slate-50/90 border-slate-300 opacity-80 cursor-not-allowed'
+                          : 'bg-white border-slate-200/90 hover:border-blue-400 cursor-pointer'
+                      }`}
+                    >
+                      {/* Left: Info */}
+                      <div className="space-y-2 min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {!isBitrixIdAsNumber ? (
+                            <span className="font-mono font-black text-slate-900 text-sm bg-slate-100 px-3 py-1 rounded-xl border border-slate-200 shrink-0">
+                              № {smartDisplay.orderNumber}
+                            </span>
+                          ) : null}
+
+                          <span className="font-black text-slate-900 text-sm sm:text-base max-w-[280px] sm:max-w-[440px] truncate" title={displayTitle}>
+                            {displayTitle}
+                          </span>
+
+                          {taskReadiness.isLocked ? (
+                            <span className="px-2.5 py-1 rounded-xl bg-slate-200/90 text-slate-700 font-extrabold text-[11px] border border-slate-300 flex items-center gap-1 shrink-0" title={taskReadiness.blockingReason}>
+                              <Lock className="w-3.5 h-3.5 text-slate-500" />
+                              <span>Заблокирована (0 деталей с прошлого участка)</span>
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-xl bg-emerald-100 text-emerald-900 font-extrabold text-[11px] border border-emerald-300 flex items-center gap-1 shrink-0">
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>{taskReadiness.statusText}</span>
+                            </span>
+                          )}
+
+                          <a
+                            href={getBitrixDealUrl(order, settings)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const dealUrl = getBitrixDealUrl(order, settings);
+                              if (dealUrl === '#') {
+                                e.preventDefault();
+                                const dealId = extractBitrixDealId(order);
+                                const val = prompt('Введите URL или ID сделки в Битрикс24:', dealId || '');
+                                if (val && onUpdateOrder) {
+                                  const url = val.startsWith('http') ? val : `https://b24.ru/crm/deal/details/${val}/`;
+                                  onUpdateOrder({
+                                    ...order,
+                                    bitrixUrl: url,
+                                    bitrixDealId: val
+                                  });
+                                  window.open(url, '_blank');
+                                }
+                              }
+                            }}
+                            className="px-2.5 py-1 rounded-xl bg-cyan-500 hover:bg-cyan-600 text-white font-extrabold text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0 cursor-pointer"
+                            title="Открыть сделку в Битрикс24"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>B24{isBitrixIdAsNumber ? ` #${extractBitrixDealId(order) || smartDisplay.orderNumber}` : ''}</span>
+                          </a>
+                          
+                          <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-extrabold border shrink-0 ${dateBadgeStyles}`}>
+                            {dateCatText} ({getOrderPlannedDate(order, selectedStageId) || 'Не указана'})
+                          </span>
+
+                          {order.currentStage !== selectedStageId && (
+                            <span className="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-300 text-[10px] font-black uppercase flex items-center gap-1 shrink-0">
+                              <Sparkles className="w-3 h-3 text-indigo-600" />
+                              <span>⚡ Онлайн-упаковка</span>
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Additional Works Pills if present */}
+                        {works && (works.countertopCutting || works.wallPanelCutting || works.barCutting || works.plinthCutting) && (
+                          <div className="flex items-center gap-2 flex-wrap text-[11px] font-bold text-amber-800 bg-amber-50/80 px-3 py-1.5 rounded-xl border border-amber-200">
+                            <Box className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Доп. работы:</span>
+                            {works.countertopCutting && <span> Столешница (распил{works.countertopEdging ? ', кромка' : ''}{works.countertopRadius ? ', радиус' : ''})</span>}
+                            {works.wallPanelCutting && <span> Стеновая панель</span>}
+                            {works.barCutting && <span> Штанга ({works.barCount || 1} шт.)</span>}
+                            {works.plinthCutting && <span> Цоколь ({works.plinthLength || 1} м.)</span>}
+                          </div>
+                        )}
+
+                        {/* Work logs output summary */}
+                        {activeLogs.length > 0 && (
+                          <div className="flex items-center gap-2 text-[11px] font-medium text-slate-600 bg-slate-50 px-3 py-1 rounded-xl border border-slate-100">
+                            <UserCheck className="w-3.5 h-3.5 text-blue-600" />
+                            <span>История смен:</span>
+                            {activeLogs.map(l => (
+                              <span key={l.id} className="font-bold text-slate-800">
+                                {l.employeeName}: {l.scannedPartsCount} дет. ({l.scannedAreaM2.toFixed(1)} м²)
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="text-xs text-slate-500 flex items-center gap-4 flex-wrap">
+                          <span>Площадь: <strong>{order.totalAreaM2} м²</strong></span>
+                          <span>Деталей: <strong>{order.partsCount} шт.</strong></span>
+                          <span>Кромка: <strong>{order.totalEdgeM} п.м.</strong></span>
+                          <span>Дата готовности: <strong>{formatDeadlineDate(order.deadlineDate)}</strong></span>
+                        </div>
+
+                        {/* Previous Stage Completion Summary */}
+                        {(() => {
+                          const getPreviousStageId = (stId: ProductionStageId): ProductionStageId | null => {
+                            const sequence: ProductionStageId[] = ['cutting', 'edging', 'cnc', 'facades', 'assembly', 'qc', 'packing'];
+                            const idx = sequence.indexOf(stId);
+                            if (idx > 0) return sequence[idx - 1];
+                            return null;
+                          };
+
+                          const curStage = selectedStageId || order.currentStage;
+                          const prevStageId = getPreviousStageId(curStage);
+                          if (!prevStageId) return null;
+
+                          const stageObj = allStages.find(s => s.id === prevStageId);
+                          const prevStageName = stageObj ? stageObj.name : prevStageId;
+                          const isStageDone = (order.stageProgress as any)?.[prevStageId]?.status === 'done' || 
+                                              !!order.forcedStageCompletions?.[prevStageId];
+
+                          const prevLogs = (order.workLogs || []).filter(l => l.stageId === prevStageId);
+                          const validLogs = prevLogs.filter(l => (l.scannedPartsCount || 0) > 0 || (l.scannedAreaM2 || 0) > 0);
+                          const scannedPieces = getStageScannedPiecesCount(order, prevStageId);
+
+                          // 1. If previous stage is NOT completed yet
+                          if (!isStageDone) {
+                            if (scannedPieces.scanned === 0) {
+                              return (
+                                <div className="mt-2 text-[11px] font-medium text-slate-700 bg-slate-100/90 p-2.5 rounded-2xl border border-slate-200 flex items-start gap-2">
+                                  <Clock className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                                  <div>
+                                    <span className="font-bold text-slate-800">
+                                      Предыдущий этап ({prevStageName}): еще не выполнялся
+                                    </span>
+                                    {' '}(готово 0 из {scannedPieces.total || order.partsCount || 0} дет.)
+                                    {curStage === 'packing' && (
+                                      <div className="text-[10px] text-slate-500 mt-0.5 font-normal">
+                                        Детали заказа на участке упаковки заблокированы до прохождения прошлых этапов.
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            } else {
+                              return (
+                                <div className="mt-2 text-[11px] font-medium text-amber-900 bg-amber-50/90 p-2.5 rounded-2xl border border-amber-200 flex items-start gap-2">
+                                  <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                                  <div>
+                                    <span className="font-bold text-amber-950">
+                                      Предыдущий этап ({prevStageName}): в процессе
+                                    </span>
+                                    {' '}— готово {scannedPieces.scanned} из {scannedPieces.total || order.partsCount} дет.
+                                    {curStage === 'packing' && (
+                                      <div className="text-[10px] text-amber-700 mt-0.5 font-normal">
+                                        Готовые детали доступны для упаковки, остальные заблокированы до завершения обработки.
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            }
+                          }
+
+                          // 2. Previous stage is completed
+                          const workerNames = Array.from(new Set(
+                            validLogs
+                              .map(l => resolveEmployeeName(l.employeeName, order, prevStageId))
+                              .filter(name => Boolean(name) && name !== 'Мастер смены' && name !== 'Сотрудник')
+                          ));
+                          const completedByName = resolveEmployeeName(order.stageProgress?.[prevStageId]?.completedBy, order, prevStageId);
+                          const whoText = workerNames.length > 0
+                            ? (workerNames.length > 1 ? `${workerNames[0]} совместно с ${workerNames.slice(1).join(', ')}` : workerNames[0])
+                            : (completedByName && completedByName !== 'Мастер смены' && completedByName !== 'Сотрудник' ? completedByName : '');
+
+                          const partsDisplay = scannedPieces.scanned > 0 ? scannedPieces.scanned : (order.partsCount || 0);
+                          const areaDisplay = (order.totalAreaM2 || 0).toFixed(1);
+
+                          return (
+                            <div className="mt-2 text-[11px] font-semibold text-slate-800 bg-emerald-50/90 p-2.5 rounded-2xl border border-emerald-200/90 flex items-start gap-2">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                              <div>
+                                {whoText ? (
+                                  <span>{prevStageName} выполнил: <strong>{whoText}</strong>, {partsDisplay} дет. в объеме {areaDisplay} м²</span>
+                                ) : (
+                                  <span>{prevStageName} завершен: {partsDisplay} дет. в объеме {areaDisplay} м²</span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      {/* Right: Actions */}
+                      <div className="flex items-center gap-3 shrink-0 justify-end">
+                        <button
+                          disabled={taskReadiness.isLocked}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (taskReadiness.isLocked) {
+                              alert(`🔒 Задача по заказу ${order.orderNumber} заблокирована!\n\nПричина: ${taskReadiness.blockingReason}\n\nСотрудник на предыдущем участке еще не начал обработку деталей. Как только первая деталь будет отсканирована на прошлом участке, задание автоматически станет доступным.`);
+                              return;
+                            }
+                            onSelectOrder(order, selectedStageId || order.currentStage);
+                          }}
+                          className={`px-5 py-2.5 rounded-2xl font-extrabold text-xs transition-all flex items-center gap-2 ${
+                            taskReadiness.isLocked
+                              ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                              : 'bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-600/20 cursor-pointer'
+                          }`}
+                        >
+                          {taskReadiness.isLocked ? (
+                            <>
+                              <Lock className="w-4 h-4" />
+                              <span>Ожидает детали</span>
+                            </>
+                          ) : (
+                            <>
+                              <Play className="w-4 h-4 fill-current" />
+                              <span>Взять в работу</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Order Details Modal */}
+      {selectedOrderDetails && (
+        <ERPOrderDetailsModal
+          order={selectedOrderDetails}
+          settings={settings}
+          currentUser={currentUser}
+          companyId={companyId}
+          onClose={() => setSelectedOrderDetails(null)}
+          onUpdateOrder={(updated) => {
+            setSelectedOrderDetails(updated);
+            if (onUpdateOrder) onUpdateOrder(updated);
+          }}
+          onUpdateOrderStatus={(orderId, nextStage) => {
+            onUpdateOrderStatus(orderId, nextStage);
+            const updated = {
+              ...selectedOrderDetails,
+              currentStage: nextStage
+            };
+            setSelectedOrderDetails(updated);
+            if (onUpdateOrder) onUpdateOrder(updated);
+          }}
+        />
+      )}
+
+      {/* Mobile Camera Scanner Modal */}
+      <MobileCameraScannerModal
+        isOpen={showCameraScannerModal}
+        onClose={() => setShowCameraScannerModal(false)}
+        onScan={handleCameraScanOrder}
+        title="Сканирование заказа камерой"
+        subtitle="Наведите камеру на QR-код или штрихкод бланка / бирки заказа"
+      />
+
+      {/* Shift Summary Modal */}
+      <ShiftSummaryModal
+        isOpen={showShiftModal}
+        currentUser={currentUser}
+        orders={orders.filter(o => !o.isDeleted)}
+        settings={settings}
+        companyName={companyName || settings?.companyTitle || settings?.shippingActTemplate?.companyTitle}
+        onClose={() => setShowShiftModal(false)}
+        onConfirmEndShift={() => {
+          setShowShiftModal(false);
+        }}
+      />
+
+      {/* Report Defect Modal */}
+      {reportingDefectDetail && (
+        <ReportDefectModal
+          isOpen={!!reportingDefectDetail}
+          order={reportingDefectDetail.order}
+          detail={reportingDefectDetail.detail}
+          settings={settings}
+          currentUser={currentUser}
+          allOrders={orders.filter(o => !o.isDeleted)}
+          onClose={() => setReportingDefectDetail(null)}
+          onDefectReported={(updatedMainOrder, defectTaskOrder) => {
+            if (onUpdateOrder) {
+              onUpdateOrder(updatedMainOrder);
+              onUpdateOrder(defectTaskOrder);
+            }
+            setReportingDefectDetail(null);
+          }}
+        />
+      )}
+    </div>
+  );
+};

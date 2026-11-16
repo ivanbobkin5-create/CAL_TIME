@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="100%" height="100%">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@800;900&amp;display=swap');
+    .logo-mp {
+      font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+      font-weight: 900;
+      fill: #FFFFFF;
+      font-size: 130px;
+      letter-spacing: 2px;
+    }
+  </style>
+  
+  <!-- Outer Blue Background -->
+  <rect width="1000" height="1000" rx="180" fill="#155DFC"/>
+
+  <!-- Outer White Frame -->
+  <rect x="87" y="87" width="826" height="826" rx="133" fill="none" stroke="#FFFFFF" stroke-width="60"/>
+
+  <!-- Left Cabinet Door (Tall) -->
+  <rect x="250" y="270" width="125" height="460" rx="20" fill="#FFFFFF"/>
+
+  <!-- Middle Cabinet Door (Short) -->
+  <rect x="410" y="270" width="125" height="280" rx="20" fill="#FFFFFF"/>
+
+  <!-- Right Cabinet Door (Short) -->
+  <rect x="570" y="270" width="125" height="280" rx="20" fill="#FFFFFF"/>
+
+  <!-- Text MP under Middle & Right Doors -->
+  <text x="410" y="705" class="logo-mp">МП</text>
+</svg>

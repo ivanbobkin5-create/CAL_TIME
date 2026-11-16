@@ -1,0 +1,380 @@
+import React, { useState, useEffect, Suspense, lazy } from 'react';
+import { LandingPage } from './components/Landing/LandingPage';
+import { LoginForm } from './components/Auth/LoginForm';
+import { RegistrationForm, RegistrationData } from './components/Auth/RegistrationForm';
+import { Calculator } from 'lucide-react';
+import { AppIcon } from './components/Common/AppIcon';
+import { LegalDocumentsView } from './components/Legal/LegalDocumentsView';
+import { PublicWidgetPage } from './components/Constructor3D/PublicWidgetPage';
+import { PartnerCabinetView } from './components/Partner/PartnerCabinetView';
+
+// Lazy-load the heavy App module with automatic retry so transient dev/network hiccups never fail
+const loadAppModule = async (): Promise<{ default: React.ComponentType<any> }> => {
+  const maxRetries = 4;
+  let lastError: any;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      if (attempt === 0) {
+        return await import('./App');
+      }
+      // Wait briefly before retrying (e.g. while Vite finishes transforming App.tsx)
+      await new Promise((r) => setTimeout(r, 700 * attempt));
+      try {
+        return await import('./App');
+      } catch {
+        return await import(/* @vite-ignore */ `./App.tsx?t=${Date.now()}`);
+      }
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError;
+};
+
+const App = lazy(loadAppModule);
+
+function getInitialView(): 'landing' | 'login' | 'register' | 'app' | 'legal' | 'widget' | 'partner' {
+  if (typeof window === 'undefined') return 'landing';
+
+  const s = window.location.search || '';
+  const p = window.location.pathname || '/';
+  const lowerP = p.toLowerCase();
+
+  if (p.startsWith('/widget/constructor/')) {
+    return 'widget';
+  }
+
+  // Partner cabinet / login / invite routes: open PartnerCabinetView immediately!
+  if (
+    lowerP === '/partner' ||
+    lowerP.startsWith('/partner/') ||
+    s.includes('partner_invite=')
+  ) {
+    return 'partner';
+  }
+
+  // Legal routes
+  if (p === '/privacy' || p === '/privacy-policy' || p === '/politika' || 
+      p === '/terms' || p === '/license' || p === '/eula' || p === '/oferta') {
+    return 'legal';
+  }
+
+  // 1. Bitrix24 embedded mode explicitly
+  const isB24Path = p.startsWith('/api/bitrix24/') || p === '/install' || p.startsWith('/install/');
+  const hasB24Params = s.includes('DOMAIN=') || s.includes('member_id=') || s.includes('PLACEMENT=') || s.includes('AUTH_ID=') || Boolean((window as any).__B24_SERVER_CONTEXT__);
+  if (isB24Path || hasB24Params) return 'app';
+
+  // 2. Auth routes
+  if (p === '/login') return 'login';
+  if (p === '/register') return 'register';
+
+  // 3. Any explicit non-root route (e.g. /admin, /app, /erp, /edge-console, /c/..., /s/..., /p/..., custom slugs)
+  if (p !== '/' && p !== '/index.html') {
+    return 'app';
+  }
+
+  // 4. On root route (/): allow explicit preview via ?landing=1, otherwise keep logged-in users in cabinet
+  if (s.includes('landing=1')) {
+    return 'landing';
+  }
+  try {
+    const inApp = sessionStorage.getItem('mebel_in_app') === 'true';
+    const hasSavedAuth = Boolean(
+      localStorage.getItem('auth_uid') ||
+      localStorage.getItem('auth_token') ||
+      localStorage.getItem('auth_user') ||
+      localStorage.getItem('currentUser')
+    );
+    if (inApp || hasSavedAuth) {
+      return 'app';
+    }
+  } catch (_) {}
+
+  return 'landing';
+}
+
+function LoadingSpinner() {
+  const [showTimeout, setShowTimeout] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowTimeout(true);
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 text-center">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+        <span className="text-white font-medium text-base">Загрузка личного кабинета...</span>
+      </div>
+      {showTimeout && (
+        <div className="mt-4 animate-fadeIn">
+          <p className="text-slate-400 text-sm mb-3">Загрузка занимает больше времени, чем обычно.</p>
+          <button
+            onClick={() => {
+              sessionStorage.removeItem('mebel_in_app');
+              window.location.href = '/';
+            }}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-medium transition-colors border border-slate-700"
+          >
+            ← Вернуться на главную страницу
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function RootApp() {
+  const [view, setView] = useState<'landing' | 'login' | 'register' | 'app' | 'legal' | 'widget' | 'partner'>(getInitialView);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setView(getInitialView());
+    };
+    const handleLogoutEvent = () => {
+      sessionStorage.removeItem('mebel_in_app');
+      setView('landing');
+    };
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('mebel:logout', handleLogoutEvent);
+    const preloadTimer = setTimeout(() => {
+      loadAppModule().catch(() => {});
+    }, 300);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('mebel:logout', handleLogoutEvent);
+      clearTimeout(preloadTimer);
+    };
+  }, []);
+
+  const handleEnterApp = () => {
+    sessionStorage.setItem('mebel_in_app', 'true');
+    if (typeof window !== 'undefined') {
+      const p = window.location.pathname;
+      if (p === '/login' || p === '/register' || window.location.search.includes('landing=1')) {
+        window.history.replaceState(null, '', '/');
+      }
+    }
+    setView('app');
+  };
+
+  const handleLandingLoginClick = () => {
+    const hasUid = typeof window !== 'undefined' && localStorage.getItem('auth_uid');
+    if (hasUid) {
+      handleEnterApp();
+    } else {
+      setView('login');
+    }
+  };
+
+  const handleLandingRegisterClick = () => {
+    setView('register');
+  };
+
+  const handleLoginSubmit = async (data: { email: string; password: string }) => {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: data.email, password: data.password })
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      let errorData: any = {};
+      try {
+        errorData = JSON.parse(text);
+      } catch (_) {}
+      throw new Error(errorData.error || errorData.message || "Неверный email или пароль");
+    }
+
+    const authUser = await response.json();
+    localStorage.setItem('auth_uid', authUser.uid);
+    localStorage.setItem('auth_email', authUser.email);
+    if (authUser.token) {
+      localStorage.setItem('auth_token', authUser.token);
+    }
+    handleEnterApp();
+  };
+
+  const handleRegisterSubmit = async (data: RegistrationData) => {
+    const response = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: data.adminEmail,
+        password: data.adminPassword,
+        adminName: data.adminName,
+        phone: data.adminPhone,
+        companyName: data.companyName,
+        companyType: data.companyType,
+        city: data.city,
+        workFormat: data.workFormat
+      })
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      let errorData: any = {};
+      try {
+        errorData = JSON.parse(text);
+      } catch (_) {}
+      const code = errorData.error || errorData.code;
+      if (code === "auth/email-already-in-use") {
+        throw new Error("Этот email уже зарегистрирован. Пожалуйста, войдите в систему.");
+      }
+      throw new Error(errorData.error || "Не удалось создать аккаунт");
+    }
+
+    const user = await response.json();
+    const companyId = Math.random().toString(36).substr(2, 9);
+    const expirationDate = new Date();
+    expirationDate.setDate(expirationDate.getDate() + 14);
+
+    const rawRegType = (data.companyType || "") as string;
+    const normalizedRegType = (rawRegType === "Производство" || rawRegType === "Мебельное производство" || rawRegType.toLowerCase().includes('производств'))
+      ? "Мебельное производство"
+      : (data.companyType || "Мебельное производство");
+    const prodFormat = normalizedRegType === "Мебельное производство" ? "own" : "contract";
+
+    await fetch(`/api/db/doc/companies/${companyId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: {
+        name: data.companyName,
+        type: normalizedRegType,
+        companyType: normalizedRegType,
+        city: data.city,
+        phone: data.adminPhone || "",
+        adminPhone: data.adminPhone || "",
+        ownerUid: user.uid,
+        tariffExpiration: expirationDate.toISOString(),
+        productionFormat: prodFormat,
+      }})
+    });
+
+    await fetch(`/api/db/doc/users/${user.uid}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: {
+        uid: user.uid,
+        email: data.adminEmail,
+        displayName: data.adminName,
+        phone: data.adminPhone || "",
+        role: "admin",
+        companyId: companyId,
+        createdAt: new Date().toISOString(),
+      }})
+    });
+
+    localStorage.setItem('auth_uid', user.uid);
+    localStorage.setItem('auth_email', data.adminEmail);
+    handleEnterApp();
+  };
+
+  if (view === 'widget') {
+    const parts = (window.location.pathname || '').split('/').filter(Boolean);
+    const widgetCompanyId = parts[2] || 'e5om9lzxh';
+    return <PublicWidgetPage companyId={widgetCompanyId} />;
+  }
+
+  if (view === 'partner') {
+    let savedUser: any = null;
+    try {
+      const raw = localStorage.getItem('user') || localStorage.getItem('auth_user') || localStorage.getItem('currentUser');
+      if (raw) savedUser = JSON.parse(raw);
+    } catch (_) {}
+    return (
+      <PartnerCabinetView
+        currentUser={savedUser}
+        onExitToMain={() => {
+          window.history.pushState(null, '', '/?landing=1');
+          setView('landing');
+        }}
+      />
+    );
+  }
+
+  if (view === 'landing') {
+    return (
+      <LandingPage
+        onLogin={handleLandingLoginClick}
+        onRegister={handleLandingRegisterClick}
+      />
+    );
+  }
+
+  if (view === 'login') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          <div className="flex items-center justify-center gap-2.5 mb-8">
+            <AppIcon className="w-10 h-10 rounded-xl shadow-md shadow-blue-200 shrink-0" />
+            <span className="text-xl font-black text-gray-900 tracking-tight">
+              Мебельный <span className="text-blue-600">калькулятор</span>
+            </span>
+          </div>
+          <LoginForm
+            onLogin={handleLoginSubmit}
+            onGoToRegister={() => setView('register')}
+          />
+          <button
+            type="button"
+            onClick={() => setView('landing')}
+            className="mt-6 w-full text-center text-sm font-semibold text-gray-500 hover:text-gray-800 transition-colors"
+          >
+            ← Вернуться на главную
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'register') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          <div className="flex items-center justify-center gap-2.5 mb-8">
+            <AppIcon className="w-10 h-10 rounded-xl shadow-md shadow-blue-200 shrink-0" />
+            <span className="text-xl font-black text-gray-900 tracking-tight">
+              Мебельный <span className="text-blue-600">калькулятор</span>
+            </span>
+          </div>
+          <RegistrationForm
+            onRegister={handleRegisterSubmit}
+            onGoToLogin={() => setView('login')}
+          />
+          <button
+            type="button"
+            onClick={() => setView('landing')}
+            className="mt-6 w-full text-center text-sm font-semibold text-gray-500 hover:text-gray-800 transition-colors"
+          >
+            ← Вернуться на главную
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'legal') {
+    const p = window.location.pathname || '/';
+    const initialDoc = (p === '/privacy' || p === '/privacy-policy' || p === '/politika') ? 'privacy' : 'terms';
+    return (
+      <LegalDocumentsView
+        initialDoc={initialDoc}
+        onBack={() => {
+          window.history.pushState(null, '', '/');
+          setView('landing');
+        }}
+      />
+    );
+  }
+
+  return (
+    <Suspense fallback={<LoadingSpinner />}>
+      <App />
+    </Suspense>
+  );
+}

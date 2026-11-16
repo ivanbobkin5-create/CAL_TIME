@@ -1,0 +1,485 @@
+14:55:32 | DEBUG | Note: switching to '7cb2109bae878bf2ce0a281ad2ba1db3bf68a7e3'.
+14:55:32 | DEBUG | 
+14:55:32 | DEBUG | changes and commit them, and you can discard any commits you make in this
+14:55:32 | DEBUG | 
+14:55:32 | DEBUG | You are in 'detached HEAD' state. You can look around, make experimental
+14:55:32 | DEBUG | If you want to create a new branch to retain commits you create, you may
+14:55:32 | DEBUG | do so (now or later) by using -c with the switch command. Example:
+14:55:32 | DEBUG | Cloning into '/workspace'...
+14:55:32 | DEBUG | HEAD is now at 7cb2109 feat: add debug logging and install handler support
+14:55:32 | DEBUG | 
+14:55:32 | DEBUG | 
+14:55:32 | DEBUG | Turn off this advice by setting config variable advice.detachedHead to false
+14:55:32 | DEBUG |   git switch -c <new-branch-name>
+14:55:32 | DEBUG | 
+14:55:32 | DEBUG | 
+14:55:32 | DEBUG | 
+14:55:32 | DEBUG | state without impacting any branches by switching back to a branch.
+14:55:32 | DEBUG |   git switch -
+14:55:32 | DEBUG | Or undo this operation with:
+14:55:37 | DEBUG | #2 [internal] load metadata for docker.io/library/node:24-slim
+14:55:37 | DEBUG | #1 transferring dockerfile:
+14:55:37 | DEBUG | 
+14:55:37 | DEBUG | #1 DONE 1.3s
+14:55:37 | INFO | Build started
+14:55:37 | DEBUG | #1 transferring dockerfile: 2.73kB done
+14:55:37 | DEBUG | #1 [internal] load build definition from Dockerfile
+14:55:44 | DEBUG | #2 DONE 9.1s
+14:55:44 | DEBUG | 
+14:55:44 | DEBUG | #3 transferring context:
+14:55:44 | DEBUG | #3 [internal] load .dockerignore
+14:55:44 | DEBUG | #3 transferring context: 106B 0.0s done
+14:55:44 | DEBUG | #3 DONE 0.6s
+14:55:45 | DEBUG | #4 [internal] load build context
+14:55:45 | DEBUG | 
+14:55:45 | DEBUG | #4 DONE 0.0s
+14:55:45 | DEBUG | #5 [ 1/12] FROM docker.io/library/node:24-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205
+14:55:45 | DEBUG | 
+14:55:45 | DEBUG | #5 resolve docker.io/library/node:24-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205
+14:55:46 | DEBUG | #5 DONE 1.5s
+14:55:46 | DEBUG | #5 resolve docker.io/library/node:24-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 1.3s done
+14:55:46 | DEBUG | 
+14:55:46 | DEBUG | #4 [internal] load build context
+14:55:46 | DEBUG | #4 transferring context: 12.23MB 0.3s done
+14:55:47 | DEBUG | #4 DONE 1.3s
+14:55:53 | DEBUG | #11 [ 8/12] COPY package.json pnpm-lock.yaml* package-lock.json* pnpm-workspace.yaml* ./
+14:55:53 | DEBUG | #7 CACHED
+14:55:53 | DEBUG | 
+14:55:53 | DEBUG | #9 [ 5/12] RUN npm install -g pm2
+14:55:53 | DEBUG | #12 [ 2/12] RUN corepack enable
+14:55:53 | DEBUG | #10 CACHED
+14:55:53 | DEBUG | 
+14:55:53 | DEBUG | #11 CACHED
+14:55:53 | DEBUG | 
+14:55:53 | DEBUG | #6 [ 6/12] RUN groupadd --gid 2000 app && useradd --uid 2000 --gid 2000 -m -s /bin/bash app
+14:55:53 | DEBUG | 
+14:55:53 | DEBUG | #8 [ 4/12] RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y --no-install-recommends     curl     && rm -rf /var/lib/apt/lists/*
+14:55:53 | DEBUG | #8 CACHED
+14:55:53 | DEBUG | #6 CACHED
+14:55:53 | DEBUG | 
+14:55:53 | DEBUG | #10 [ 7/12] WORKDIR /app
+14:55:53 | DEBUG | 
+14:55:53 | DEBUG | #7 [ 3/12] RUN if [ -d /etc/apt ]; then       printf '%s\tpriority:1\n%s\tpriority:2\n%s\tpriority:3\n%s\tpriority:4\n' http://mirror.timeweb.ru/debian http://mirror.yandex.ru/debian http://mirror.selectel.ru/debian http://deb.debian.org/debian > /etc/apt/mirrors-debian.list;       printf '%s\tpriority:1\n%s\tpriority:2\n%s\tpriority:3\n' http://mirror.yandex.ru/debian-security http://mirror.selectel.ru/debian-security http://deb.debian.org/debian-security > /etc/apt/mirrors-debian-security.list;       for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do         if [ -f "$f" ]; then           sed -i -E             -e 's#https?://(deb|security)\.debian\.org/debian-security/?( |$)#mirror+file:/etc/apt/mirrors-debian-security.list\2#g'             -e 's#https?://deb\.debian\.org/debian/?( |$)#mirror+file:/etc/apt/mirrors-debian.list\1#g'             "$f";         fi;       done;       if grep -qs 'mirror+file:' /etc/apt/sources.list /etc/apt/sources.list.d/*; then         mkdir -p /etc/apt/apt.conf.d;         printf '%s\n' 'Acquire::Retries "0";' 'Acquire::http::Timeout "10";' > /etc/apt/apt.conf.d/99-mirror-fallback;       fi;     fi
+14:55:53 | DEBUG | 
+14:55:53 | DEBUG | #9 CACHED
+14:55:53 | DEBUG | 
+14:55:53 | DEBUG | #14 CACHED
+14:55:53 | DEBUG | 
+14:55:53 | DEBUG | #12 CACHED
+14:55:53 | DEBUG | #13 CACHED
+14:55:53 | DEBUG | 
+14:55:53 | DEBUG | #15 [11/12] COPY --chown=app:app . .
+14:55:53 | DEBUG | #13 [ 9/12] RUN if [ -f pnpm-lock.yaml ]; then       echo "Detected pnpm workspace";       corepack prepare pnpm --activate && pnpm install --frozen-lockfile;     elif [ -f package-lock.json ]; then       echo "Detected npm project";       npm ci;     else       echo "No lockfile, fallback to basic install";       npm install;     fi
+14:55:53 | DEBUG | #14 [10/12] WORKDIR /app
+14:56:05 | DEBUG | #15 DONE 11.1s
+14:56:05 | DEBUG | #16 [12/12] RUN npm install --legacy-peer-deps && npm run build
+14:56:05 | DEBUG | 
+14:56:13 | DEBUG | #16 8.849 removed 2 packages, and audited 660 packages in 6s
+14:56:13 | DEBUG | #16 8.849 
+14:56:14 | DEBUG | #16 8.867 npm warn install-scripts   @google/genai@1.52.0 (preinstall: echo 'preinstall: no-op')
+14:56:14 | DEBUG | #16 8.867 npm warn install-scripts 8 packages have install scripts not yet covered by allowScripts:
+14:56:14 | DEBUG | #16 8.867 npm warn install-scripts   protobufjs@7.6.6 (postinstall: node scripts/postinstall)
+14:56:14 | DEBUG | #16 8.865 2 high severity vulnerabilities
+14:56:14 | DEBUG | #16 8.867 npm warn install-scripts   esbuild@0.25.12 (postinstall: node install.js)
+14:56:14 | DEBUG | #16 8.867 npm warn install-scripts   @prisma/engines@5.22.0 (postinstall: node scripts/postinstall.js)
+14:56:14 | DEBUG | #16 8.867 npm warn install-scripts   esbuild@0.28.2 (postinstall: node install.js)
+14:56:14 | DEBUG | #16 8.850   run `npm fund` for details
+14:56:14 | DEBUG | #16 8.867 npm warn install-scripts   prisma@5.22.0 (preinstall: node scripts/preinstall-entry.js)
+14:56:14 | DEBUG | #16 8.867 npm warn install-scripts   @prisma/client@5.22.0 (postinstall: node scripts/postinstall.js)
+14:56:14 | DEBUG | #16 8.865 a different dependency.
+14:56:14 | DEBUG | #16 8.867 npm warn install-scripts
+14:56:14 | DEBUG | #16 8.849 
+14:56:14 | DEBUG | #16 8.865 To address all issues possible (including breaking changes), run:
+14:56:14 | DEBUG | #16 8.850 126 packages are looking for funding
+14:56:14 | DEBUG | #16 8.865 
+14:56:14 | DEBUG | #16 8.865 Run `npm audit` for details.
+14:56:14 | DEBUG | #16 8.865 Some issues need review, and may require choosing
+14:56:14 | DEBUG | #16 8.865   npm audit fix --force
+14:56:14 | DEBUG | #16 8.865 
+14:56:14 | DEBUG | #16 8.865 
+14:56:14 | DEBUG | #16 8.867 npm warn install-scripts   core-js@3.51.0 (postinstall: node -e "try{require('./postinstall')}catch(e){}")
+14:56:14 | DEBUG | #16 8.867 npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+14:56:14 | DEBUG | #16 8.865 
+14:56:14 | DEBUG | #16 9.166 
+14:56:14 | DEBUG | #16 9.166 > npx prisma generate || true && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && esbuild seed.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/seed.cjs
+14:56:14 | DEBUG | #16 9.166 
+14:56:14 | DEBUG | #16 9.166 > prisma-app@1.0.0 build
+14:56:16 | DEBUG | #16 11.81 Prisma schema loaded from prisma/schema.prisma
+14:56:23 | DEBUG | #16 18.37 
+14:56:23 | DEBUG | #16 18.37 
+14:56:23 | DEBUG | #16 18.37 ✔ Generated Prisma Client (v5.22.0) to ./node_modules/@prisma/client in 1.26s
+14:56:23 | DEBUG | #16 18.37 
+14:56:23 | DEBUG | #16 18.37 Tip: Want to react to database changes in your app as they happen? Discover how with Pulse: https://pris.ly/tip-1-pulse
+14:56:23 | DEBUG | #16 18.37 
+14:56:23 | DEBUG | #16 18.37 Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+14:56:25 | DEBUG | #16 20.41 [36mvite v6.4.5 [32mbuilding for production...[36m[39m
+14:56:25 | DEBUG | #16 20.55 transforming...
+14:56:48 | DEBUG | #16 43.14 [32m✓[39m 2980 modules transformed.
+14:56:49 | DEBUG | #16 44.67 rendering chunks...
+14:56:51 | DEBUG | #16 46.70 computing gzip size...
+14:56:52 | DEBUG | #16 47.05 [2mdist/[22m[2massets/[22m[35mindex-CdFOrcoZ.css    [39m[1m[2m  296.53 kB[22m[1m[22m[2m │ gzip:    35.71 kB[22m
+14:56:52 | DEBUG | #16 47.05 [2mdist/[22m[32mindex.html                   [39m[1m[2m   10.90 kB[22m[1m[22m[2m │ gzip:     3.33 kB[22m
+14:56:52 | DEBUG | #16 47.05 [2mdist/[22m[2massets/[22m[36mvendor-BasmXCSq.js    [39m[1m[2m  191.07 kB[22m[1m[22m[2m │ gzip:    52.07 kB[22m
+14:56:52 | DEBUG | #16 47.05 [2mdist/[22m[2massets/[22m[36mindex-DAQOmnfr.js     [39m[1m[2m  436.03 kB[22m[1m[22m[2m │ gzip:   121.21 kB[22m
+14:56:52 | DEBUG | #16 47.05 [32m✓ built in 26.61s[39m
+14:56:52 | DEBUG | #16 47.05 - Using dynamic import() to code-split the application
+14:56:52 | DEBUG | #16 47.05 [2mdist/[22m[2massets/[22m[36mApp-Di_jjOm2.js       [39m[1m[33m6,148.02 kB[39m[22m[2m │ gzip: 1,515.60 kB[22m
+14:56:52 | DEBUG | #16 47.05 [2mdist/[22m[2massets/[22m[36mhtml2pdf-DgUET4lE.js  [39m[1m[33m  983.89 kB[39m[22m[2m │ gzip:   285.54 kB[22m
+14:56:52 | DEBUG | #16 47.05 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+14:56:52 | DEBUG | #16 47.05 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+14:56:52 | DEBUG | #16 47.05 (!) Some chunks are larger than 500 kB after minification. Consider:
+14:56:52 | DEBUG | #16 47.05 [33m
+14:56:52 | DEBUG | #16 47.33 ✘ [ERROR] Unexpected ")"
+14:56:52 | DEBUG | #16 47.33            ╵    ^
+14:56:52 | DEBUG | #16 47.33 1 error
+14:56:52 | DEBUG | #16 47.33     server.ts:3380:3:
+14:56:52 | DEBUG | #16 47.33       3380 │   });
+14:56:52 | DEBUG | #16 47.33 
+14:56:52 | DEBUG | #16 47.33 
+14:56:56 | DEBUG | #16 ERROR: process "/bin/sh -c npm install --legacy-peer-deps && npm run build" did not complete successfully: exit code: 1
+14:56:57 | DEBUG | 47.33 
+14:56:57 | DEBUG | 47.33       3380 │   });
+14:56:57 | DEBUG |  > [12/12] RUN npm install --legacy-peer-deps && npm run build:
+14:56:57 | DEBUG | 47.33 
+14:56:57 | DEBUG | 47.33            ╵    ^
+14:56:57 | DEBUG | ------
+14:56:57 | DEBUG | ------
+14:56:57 | DEBUG | 47.05 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+14:56:57 | DEBUG | 47.05 [32m✓ built in 26.61s[39m
+14:56:57 | DEBUG | 47.05 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+14:56:57 | DEBUG | 47.33 ✘ [ERROR] Unexpected ")"
+14:56:57 | DEBUG | 47.33     server.ts:3380:3:
+14:56:57 | DEBUG | 47.33 1 error
+14:56:57 | DEBUG |   90 |     # Run build command if provided
+14:56:57 | DEBUG |   93 |     
+14:56:57 | DEBUG |   91 |     
+14:56:57 | DEBUG |   92 | >>> RUN npm install --legacy-peer-deps && npm run build
+14:56:57 | DEBUG | --------------------
+14:56:57 | DEBUG | --------------------
+14:56:57 | INFO | error: failed to solve: process "/bin/sh -c npm install --legacy-peer-deps && npm run build" did not complete successfully: exit code: 1
+14:56:57 | DEBUG | Dockerfile:92
+14:56:57 | DEBUG |   94 |     
+14:56:57 | INFO | Build failed
+14:57:12 | DEBUG | You are in 'detached HEAD' state. You can look around, make experimental
+14:57:12 | DEBUG | 
+14:57:12 | DEBUG | do so (now or later) by using -c with the switch command. Example:
+14:57:12 | DEBUG | 
+14:57:12 | DEBUG |   git switch -
+14:57:12 | DEBUG | changes and commit them, and you can discard any commits you make in this
+14:57:12 | DEBUG | If you want to create a new branch to retain commits you create, you may
+14:57:12 | DEBUG | 
+14:57:12 | DEBUG | state without impacting any branches by switching back to a branch.
+14:57:12 | DEBUG | Cloning into '/workspace'...
+14:57:12 | DEBUG | 
+14:57:12 | DEBUG | Or undo this operation with:
+14:57:12 | DEBUG | HEAD is now at 7cb2109 feat: add debug logging and install handler support
+14:57:12 | DEBUG | 
+14:57:12 | DEBUG | Note: switching to '7cb2109bae878bf2ce0a281ad2ba1db3bf68a7e3'.
+14:57:12 | DEBUG | 
+14:57:12 | DEBUG | 
+14:57:12 | DEBUG | Turn off this advice by setting config variable advice.detachedHead to false
+14:57:12 | DEBUG |   git switch -c <new-branch-name>
+14:57:17 | DEBUG | 
+14:57:17 | DEBUG | #2 [internal] load metadata for docker.io/library/node:24-slim
+14:57:17 | DEBUG | #1 [internal] load build definition from Dockerfile
+14:57:17 | INFO | Build started
+14:57:17 | DEBUG | #1 transferring dockerfile: 2.73kB done
+14:57:17 | DEBUG | #1 DONE 0.2s
+14:57:18 | DEBUG | #2 DONE 4.7s
+14:57:18 | DEBUG | #3 DONE 0.1s
+14:57:18 | DEBUG | #3 transferring context: 106B done
+14:57:18 | DEBUG | 
+14:57:18 | DEBUG | #3 [internal] load .dockerignore
+14:57:19 | DEBUG | #4 DONE 0.0s
+14:57:19 | DEBUG | 
+14:57:19 | DEBUG | #5 [ 1/12] FROM docker.io/library/node:24-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205
+14:57:19 | DEBUG | 
+14:57:19 | DEBUG | #5 resolve docker.io/library/node:24-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205
+14:57:19 | DEBUG | #4 [internal] load build context
+14:57:19 | DEBUG | #5 resolve docker.io/library/node:24-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 0.2s done
+14:57:19 | DEBUG | #5 DONE 0.2s
+14:57:19 | DEBUG | #4 [internal] load build context
+14:57:19 | DEBUG | 
+14:57:19 | DEBUG | #4 DONE 0.3s
+14:57:19 | DEBUG | #4 transferring context: 12.23MB 0.3s done
+14:57:19 | DEBUG | 
+14:57:19 | DEBUG | #10 [ 4/12] RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y --no-install-recommends     curl     && rm -rf /var/lib/apt/lists/*
+14:57:19 | DEBUG | 
+14:57:19 | DEBUG | #8 [10/12] WORKDIR /app
+14:57:19 | DEBUG | 
+14:57:19 | DEBUG | #9 [ 2/12] RUN corepack enable
+14:57:19 | DEBUG | #9 CACHED
+14:57:19 | DEBUG | 
+14:57:19 | DEBUG | #8 CACHED
+14:57:19 | DEBUG | 
+14:57:19 | DEBUG | #6 [ 9/12] RUN if [ -f pnpm-lock.yaml ]; then       echo "Detected pnpm workspace";       corepack prepare pnpm --activate && pnpm install --frozen-lockfile;     elif [ -f package-lock.json ]; then       echo "Detected npm project";       npm ci;     else       echo "No lockfile, fallback to basic install";       npm install;     fi
+14:57:19 | DEBUG | #10 CACHED
+14:57:19 | DEBUG | 
+14:57:19 | DEBUG | #6 CACHED
+14:57:19 | DEBUG | #7 CACHED
+14:57:19 | DEBUG | #7 [ 7/12] WORKDIR /app
+14:57:19 | DEBUG | #12 [ 3/12] RUN if [ -d /etc/apt ]; then       printf '%s\tpriority:1\n%s\tpriority:2\n%s\tpriority:3\n%s\tpriority:4\n' http://mirror.timeweb.ru/debian http://mirror.yandex.ru/debian http://mirror.selectel.ru/debian http://deb.debian.org/debian > /etc/apt/mirrors-debian.list;       printf '%s\tpriority:1\n%s\tpriority:2\n%s\tpriority:3\n' http://mirror.yandex.ru/debian-security http://mirror.selectel.ru/debian-security http://deb.debian.org/debian-security > /etc/apt/mirrors-debian-security.list;       for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do         if [ -f "$f" ]; then           sed -i -E             -e 's#https?://(deb|security)\.debian\.org/debian-security/?( |$)#mirror+file:/etc/apt/mirrors-debian-security.list\2#g'             -e 's#https?://deb\.debian\.org/debian/?( |$)#mirror+file:/etc/apt/mirrors-debian.list\1#g'             "$f";         fi;       done;       if grep -qs 'mirror+file:' /etc/apt/sources.list /etc/apt/sources.list.d/*; then         mkdir -p /etc/apt/apt.conf.d;         printf '%s\n' 'Acquire::Retries "0";' 'Acquire::http::Timeout "10";' > /etc/apt/apt.conf.d/99-mirror-fallback;       fi;     fi
+14:57:19 | DEBUG | #16 [12/12] RUN npm install --legacy-peer-deps && npm run build
+14:57:19 | DEBUG | 
+14:57:19 | DEBUG | #12 CACHED
+14:57:19 | DEBUG | 
+14:57:19 | DEBUG | #11 CACHED
+14:57:19 | DEBUG | #14 CACHED
+14:57:19 | DEBUG | #15 [11/12] COPY --chown=app:app . .
+14:57:19 | DEBUG | 
+14:57:19 | DEBUG | #11 [ 5/12] RUN npm install -g pm2
+14:57:19 | DEBUG | 
+14:57:19 | DEBUG | 
+14:57:19 | DEBUG | #15 CACHED
+14:57:19 | DEBUG | #13 CACHED
+14:57:19 | DEBUG | #13 [ 6/12] RUN groupadd --gid 2000 app && useradd --uid 2000 --gid 2000 -m -s /bin/bash app
+14:57:19 | DEBUG | #14 [ 8/12] COPY package.json pnpm-lock.yaml* package-lock.json* pnpm-workspace.yaml* ./
+14:57:29 | DEBUG | #16 10.08 126 packages are looking for funding
+14:57:29 | DEBUG | #16 10.08 removed 2 packages, and audited 660 packages in 9s
+14:57:29 | DEBUG | #16 10.08 
+14:57:29 | DEBUG | #16 10.08 
+14:57:29 | DEBUG | #16 10.08   run `npm fund` for details
+14:57:29 | DEBUG | #16 10.11   npm audit fix --force
+14:57:29 | DEBUG | #16 10.11 npm warn install-scripts   @google/genai@1.52.0 (preinstall: echo 'preinstall: no-op')
+14:57:29 | DEBUG | #16 10.11 
+14:57:29 | DEBUG | #16 10.11 Some issues need review, and may require choosing
+14:57:29 | DEBUG | #16 10.11 
+14:57:29 | DEBUG | #16 10.11 a different dependency.
+14:57:29 | DEBUG | #16 10.11 
+14:57:29 | DEBUG | #16 10.11 
+14:57:29 | DEBUG | #16 10.11 To address all issues possible (including breaking changes), run:
+14:57:29 | DEBUG | #16 10.11 2 high severity vulnerabilities
+14:57:29 | DEBUG | #16 10.11 npm warn install-scripts 8 packages have install scripts not yet covered by allowScripts:
+14:57:29 | DEBUG | #16 10.11 npm warn install-scripts   @prisma/client@5.22.0 (postinstall: node scripts/postinstall.js)
+14:57:29 | DEBUG | #16 10.11 Run `npm audit` for details.
+14:57:29 | DEBUG | #16 10.11 npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+14:57:29 | DEBUG | #16 10.11 npm warn install-scripts   core-js@3.51.0 (postinstall: node -e "try{require('./postinstall')}catch(e){}")
+14:57:29 | DEBUG | #16 10.11 npm warn install-scripts   protobufjs@7.6.6 (postinstall: node scripts/postinstall)
+14:57:29 | DEBUG | #16 10.11 npm warn install-scripts   prisma@5.22.0 (preinstall: node scripts/preinstall-entry.js)
+14:57:29 | DEBUG | #16 10.11 npm warn install-scripts   esbuild@0.25.12 (postinstall: node install.js)
+14:57:29 | DEBUG | #16 10.11 npm warn install-scripts   @prisma/engines@5.22.0 (postinstall: node scripts/postinstall.js)
+14:57:29 | DEBUG | #16 10.11 npm warn install-scripts   esbuild@0.28.2 (postinstall: node install.js)
+14:57:29 | DEBUG | #16 10.11 npm warn install-scripts
+14:57:29 | DEBUG | #16 10.44 
+14:57:29 | DEBUG | #16 10.44 
+14:57:29 | DEBUG | #16 10.44 > npx prisma generate || true && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && esbuild seed.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/seed.cjs
+14:57:29 | DEBUG | #16 10.44 > prisma-app@1.0.0 build
+14:57:35 | DEBUG | #16 16.01 Prisma schema loaded from prisma/schema.prisma
+14:57:42 | DEBUG | #16 22.90 
+14:57:42 | DEBUG | #16 22.90 ✔ Generated Prisma Client (v5.22.0) to ./node_modules/@prisma/client in 831ms
+14:57:42 | DEBUG | #16 22.90 Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+14:57:42 | DEBUG | #16 22.90 
+14:57:42 | DEBUG | #16 22.90 
+14:57:42 | DEBUG | #16 22.90 Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+14:57:42 | DEBUG | #16 22.90 
+14:57:42 | DEBUG | #16 23.46 [36mvite v6.4.5 [32mbuilding for production...[36m[39m
+14:57:43 | DEBUG | #16 23.57 transforming...
+14:58:03 | DEBUG | #16 43.56 [32m✓[39m 2980 modules transformed.
+14:58:04 | DEBUG | #16 45.13 rendering chunks...
+14:58:06 | DEBUG | #16 47.09 computing gzip size...
+14:58:07 | DEBUG | #16 47.57 [2mdist/[22m[32mindex.html                   [39m[1m[2m   10.90 kB[22m[1m[22m[2m │ gzip:     3.33 kB[22m
+14:58:07 | DEBUG | #16 47.57 [2mdist/[22m[2massets/[22m[35mindex-CdFOrcoZ.css    [39m[1m[2m  296.53 kB[22m[1m[22m[2m │ gzip:    35.71 kB[22m
+14:58:07 | DEBUG | #16 47.57 [2mdist/[22m[2massets/[22m[36mindex-DAQOmnfr.js     [39m[1m[2m  436.03 kB[22m[1m[22m[2m │ gzip:   121.21 kB[22m
+14:58:07 | DEBUG | #16 47.57 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+14:58:07 | DEBUG | #16 47.57 - Using dynamic import() to code-split the application
+14:58:07 | DEBUG | #16 47.57 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+14:58:07 | DEBUG | #16 47.57 [33m
+14:58:07 | DEBUG | #16 47.57 (!) Some chunks are larger than 500 kB after minification. Consider:
+14:58:07 | DEBUG | #16 47.57 [2mdist/[22m[2massets/[22m[36mvendor-BasmXCSq.js    [39m[1m[2m  191.07 kB[22m[1m[22m[2m │ gzip:    52.07 kB[22m
+14:58:07 | DEBUG | #16 47.57 [2mdist/[22m[2massets/[22m[36mApp-Di_jjOm2.js       [39m[1m[33m6,148.02 kB[39m[22m[2m │ gzip: 1,515.60 kB[22m
+14:58:07 | DEBUG | #16 47.58 [32m✓ built in 24.09s[39m
+14:58:07 | DEBUG | #16 47.57 [2mdist/[22m[2massets/[22m[36mhtml2pdf-DgUET4lE.js  [39m[1m[33m  983.89 kB[39m[22m[2m │ gzip:   285.54 kB[22m
+14:58:07 | DEBUG | #16 48.02            ╵    ^
+14:58:07 | DEBUG | #16 48.02 
+14:58:07 | DEBUG | #16 48.02     server.ts:3380:3:
+14:58:07 | DEBUG | #16 48.02 1 error
+14:58:07 | DEBUG | #16 48.02       3380 │   });
+14:58:07 | DEBUG | #16 48.02 ✘ [ERROR] Unexpected ")"
+14:58:07 | DEBUG | #16 48.02 
+14:58:09 | DEBUG | #16 ERROR: process "/bin/sh -c npm install --legacy-peer-deps && npm run build" did not complete successfully: exit code: 1
+14:58:09 | DEBUG | 48.02 
+14:58:09 | DEBUG | 48.02     server.ts:3380:3:
+14:58:09 | DEBUG | 48.02 ✘ [ERROR] Unexpected ")"
+14:58:09 | DEBUG | 47.57 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+14:58:09 | DEBUG | 48.02       3380 │   });
+14:58:09 | DEBUG | 48.02 1 error
+14:58:09 | DEBUG | 47.58 [32m✓ built in 24.09s[39m
+14:58:09 | DEBUG | ------
+14:58:09 | DEBUG | 48.02 
+14:58:09 | DEBUG | 48.02            ╵    ^
+14:58:09 | DEBUG |  > [12/12] RUN npm install --legacy-peer-deps && npm run build:
+14:58:09 | DEBUG | 47.57 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+14:58:09 | DEBUG | ------
+14:58:09 | DEBUG |   93 |     
+14:58:09 | DEBUG |   90 |     # Run build command if provided
+14:58:09 | DEBUG |   91 |     
+14:58:09 | DEBUG | --------------------
+14:58:09 | DEBUG |   94 |     
+14:58:09 | DEBUG | Dockerfile:92
+14:58:09 | DEBUG |   92 | >>> RUN npm install --legacy-peer-deps && npm run build
+14:58:09 | DEBUG | --------------------
+14:58:09 | INFO | error: failed to solve: process "/bin/sh -c npm install --legacy-peer-deps && npm run build" did not complete successfully: exit code: 1
+14:58:09 | INFO | Build failed
+14:58:36 | DEBUG | Cloning into '/workspace'...
+14:58:39 | DEBUG | 
+14:58:39 | DEBUG | changes and commit them, and you can discard any commits you make in this
+14:58:39 | DEBUG |   git switch -c <new-branch-name>
+14:58:39 | DEBUG | If you want to create a new branch to retain commits you create, you may
+14:58:39 | DEBUG | Or undo this operation with:
+14:58:39 | DEBUG | 
+14:58:39 | DEBUG | Note: switching to '7cb2109bae878bf2ce0a281ad2ba1db3bf68a7e3'.
+14:58:39 | DEBUG | 
+14:58:39 | DEBUG | HEAD is now at 7cb2109 feat: add debug logging and install handler support
+14:58:39 | DEBUG |   git switch -
+14:58:39 | DEBUG | state without impacting any branches by switching back to a branch.
+14:58:39 | DEBUG | do so (now or later) by using -c with the switch command. Example:
+14:58:39 | DEBUG | 
+14:58:39 | DEBUG | 
+14:58:39 | DEBUG | 
+14:58:39 | DEBUG | Turn off this advice by setting config variable advice.detachedHead to false
+14:58:39 | DEBUG | You are in 'detached HEAD' state. You can look around, make experimental
+14:58:39 | DEBUG | 
+14:58:41 | DEBUG | #1 DONE 0.0s
+14:58:41 | DEBUG | #2 [internal] load metadata for docker.io/library/node:24-slim
+14:58:41 | INFO | Build started
+14:58:41 | DEBUG | #1 transferring dockerfile: 2.73kB 0.0s done
+14:58:41 | DEBUG | #1 [internal] load build definition from Dockerfile
+14:58:41 | DEBUG | 
+14:58:41 | DEBUG | #1 WARN: NoEmptyContinuation: Empty continuation line (line 53)
+14:58:52 | DEBUG | #2 DONE 11.2s
+14:58:52 | DEBUG | #3 DONE 0.0s
+14:58:52 | DEBUG | 
+14:58:52 | DEBUG | 
+14:58:52 | DEBUG | 
+14:58:52 | DEBUG | #3 [internal] load .dockerignore
+14:58:52 | DEBUG | #4 [ 1/12] FROM docker.io/library/node:24-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205
+14:58:52 | DEBUG | #4 DONE 0.0s
+14:58:52 | DEBUG | #3 transferring context: 106B done
+14:58:52 | DEBUG | #5 [internal] load build context
+14:58:52 | DEBUG | #4 resolve docker.io/library/node:24-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 0.0s done
+14:58:52 | DEBUG | 
+14:58:52 | DEBUG | #9 [ 5/12] RUN npm install -g pm2
+14:58:52 | DEBUG | 
+14:58:52 | DEBUG | #5 DONE 0.3s
+14:58:52 | DEBUG | #6 CACHED
+14:58:52 | DEBUG | #10 CACHED
+14:58:52 | DEBUG | #8 CACHED
+14:58:52 | DEBUG | #10 [ 6/12] RUN groupadd --gid 2000 app && useradd --uid 2000 --gid 2000 -m -s /bin/bash app
+14:58:52 | DEBUG | #11 CACHED
+14:58:52 | DEBUG | #11 [ 7/12] WORKDIR /app
+14:58:52 | DEBUG | 
+14:58:52 | DEBUG | #7 CACHED
+14:58:52 | DEBUG | #5 transferring context: 12.23MB 0.2s done
+14:58:52 | DEBUG | #6 [ 3/12] RUN if [ -d /etc/apt ]; then       printf '%s\tpriority:1\n%s\tpriority:2\n%s\tpriority:3\n%s\tpriority:4\n' http://mirror.timeweb.ru/debian http://mirror.yandex.ru/debian http://mirror.selectel.ru/debian http://deb.debian.org/debian > /etc/apt/mirrors-debian.list;       printf '%s\tpriority:1\n%s\tpriority:2\n%s\tpriority:3\n' http://mirror.yandex.ru/debian-security http://mirror.selectel.ru/debian-security http://deb.debian.org/debian-security > /etc/apt/mirrors-debian-security.list;       for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do         if [ -f "$f" ]; then           sed -i -E             -e 's#https?://(deb|security)\.debian\.org/debian-security/?( |$)#mirror+file:/etc/apt/mirrors-debian-security.list\2#g'             -e 's#https?://deb\.debian\.org/debian/?( |$)#mirror+file:/etc/apt/mirrors-debian.list\1#g'             "$f";         fi;       done;       if grep -qs 'mirror+file:' /etc/apt/sources.list /etc/apt/sources.list.d/*; then         mkdir -p /etc/apt/apt.conf.d;         printf '%s\n' 'Acquire::Retries "0";' 'Acquire::http::Timeout "10";' > /etc/apt/apt.conf.d/99-mirror-fallback;       fi;     fi
+14:58:52 | DEBUG | #7 [ 4/12] RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y --no-install-recommends     curl     && rm -rf /var/lib/apt/lists/*
+14:58:52 | DEBUG | 
+14:58:52 | DEBUG | #8 [ 8/12] COPY package.json pnpm-lock.yaml* package-lock.json* pnpm-workspace.yaml* ./
+14:58:52 | DEBUG | 
+14:58:52 | DEBUG | #9 CACHED
+14:58:52 | DEBUG | 
+14:58:52 | DEBUG | 
+14:58:52 | DEBUG | #12 CACHED
+14:58:52 | DEBUG | #14 [ 2/12] RUN corepack enable
+14:58:52 | DEBUG | 
+14:58:52 | DEBUG | #13 CACHED
+14:58:52 | DEBUG | 
+14:58:52 | DEBUG | #14 CACHED
+14:58:52 | DEBUG | #13 [10/12] WORKDIR /app
+14:58:52 | DEBUG | #12 [ 9/12] RUN if [ -f pnpm-lock.yaml ]; then       echo "Detected pnpm workspace";       corepack prepare pnpm --activate && pnpm install --frozen-lockfile;     elif [ -f package-lock.json ]; then       echo "Detected npm project";       npm ci;     else       echo "No lockfile, fallback to basic install";       npm install;     fi
+14:58:52 | DEBUG | #15 CACHED
+14:58:52 | DEBUG | 
+14:58:52 | DEBUG | 
+14:58:52 | DEBUG | #16 [12/12] RUN npm install --legacy-peer-deps && npm run build
+14:58:52 | DEBUG | #15 [11/12] COPY --chown=app:app . .
+14:58:54 | DEBUG | #16 2.054 removed 2 packages, and audited 660 packages in 2s
+14:58:54 | DEBUG | #16 2.054 
+14:58:55 | DEBUG | #16 2.067 npm warn install-scripts 8 packages have install scripts not yet covered by allowScripts:
+14:58:55 | DEBUG | #16 2.064 Some issues need review, and may require choosing
+14:58:55 | DEBUG | #16 2.064 2 high severity vulnerabilities
+14:58:55 | DEBUG | #16 2.218 
+14:58:55 | DEBUG | #16 2.054 126 packages are looking for funding
+14:58:55 | DEBUG | #16 2.064 
+14:58:55 | DEBUG | #16 2.064 
+14:58:55 | DEBUG | #16 2.054   run `npm fund` for details
+14:58:55 | DEBUG | #16 2.067 npm warn install-scripts
+14:58:55 | DEBUG | #16 2.067 npm warn install-scripts   protobufjs@7.6.6 (postinstall: node scripts/postinstall)
+14:58:55 | DEBUG | #16 2.064   npm audit fix --force
+14:58:55 | DEBUG | #16 2.067 npm warn install-scripts   @google/genai@1.52.0 (preinstall: echo 'preinstall: no-op')
+14:58:55 | DEBUG | #16 2.067 npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+14:58:55 | DEBUG | #16 2.064 To address all issues possible (including breaking changes), run:
+14:58:55 | DEBUG | #16 2.067 npm warn install-scripts   core-js@3.51.0 (postinstall: node -e "try{require('./postinstall')}catch(e){}")
+14:58:55 | DEBUG | #16 2.067 npm warn install-scripts   esbuild@0.25.12 (postinstall: node install.js)
+14:58:55 | DEBUG | #16 2.054 
+14:58:55 | DEBUG | #16 2.064 Run `npm audit` for details.
+14:58:55 | DEBUG | #16 2.218 
+14:58:55 | DEBUG | #16 2.067 npm warn install-scripts   esbuild@0.28.2 (postinstall: node install.js)
+14:58:55 | DEBUG | #16 2.067 npm warn install-scripts   @prisma/engines@5.22.0 (postinstall: node scripts/postinstall.js)
+14:58:55 | DEBUG | #16 2.218 > prisma-app@1.0.0 build
+14:58:55 | DEBUG | #16 2.064 a different dependency.
+14:58:55 | DEBUG | #16 2.064 
+14:58:55 | DEBUG | #16 2.067 npm warn install-scripts   prisma@5.22.0 (preinstall: node scripts/preinstall-entry.js)
+14:58:55 | DEBUG | #16 2.067 npm warn install-scripts   @prisma/client@5.22.0 (postinstall: node scripts/postinstall.js)
+14:58:55 | DEBUG | #16 2.064 
+14:58:55 | DEBUG | #16 2.218 > npx prisma generate || true && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && esbuild seed.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/seed.cjs
+14:58:55 | DEBUG | #16 3.181 Prisma schema loaded from prisma/schema.prisma
+14:58:58 | DEBUG | #16 5.760 
+14:58:58 | DEBUG | #16 5.760 
+14:58:58 | DEBUG | #16 5.760 Help us improve the Prisma ORM for everyone. Share your feedback in a short 2-min survey: https://pris.ly/orm/survey/release-5-22
+14:58:58 | DEBUG | #16 5.760 
+14:58:58 | DEBUG | #16 5.760 Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+14:58:58 | DEBUG | #16 5.760 ✔ Generated Prisma Client (v5.22.0) to ./node_modules/@prisma/client in 374ms
+14:58:58 | DEBUG | #16 5.760 
+14:58:59 | DEBUG | #16 6.282 [36mvite v6.4.5 [32mbuilding for production...[36m[39m
+14:58:59 | DEBUG | #16 6.382 transforming...
+14:59:04 | DEBUG | #16 ...
+14:59:04 | DEBUG | #4 CACHED
+14:59:04 | DEBUG | 
+14:59:04 | DEBUG | #4 [ 1/12] FROM docker.io/library/node:24-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205
+14:59:04 | DEBUG | 
+14:59:04 | DEBUG | #16 [12/12] RUN npm install --legacy-peer-deps && npm run build
+14:59:21 | DEBUG | #16 28.58 [32m✓[39m 2980 modules transformed.
+14:59:22 | DEBUG | #16 29.95 rendering chunks...
+14:59:24 | DEBUG | #16 31.84 computing gzip size...
+14:59:24 | DEBUG | #16 32.05 [2mdist/[22m[2massets/[22m[35mindex-CdFOrcoZ.css    [39m[1m[2m  296.53 kB[22m[1m[22m[2m │ gzip:    35.71 kB[22m
+14:59:24 | DEBUG | #16 32.05 [2mdist/[22m[32mindex.html                   [39m[1m[2m   10.90 kB[22m[1m[22m[2m │ gzip:     3.33 kB[22m
+14:59:25 | DEBUG | #16 32.05 [2mdist/[22m[2massets/[22m[36mvendor-BasmXCSq.js    [39m[1m[2m  191.07 kB[22m[1m[22m[2m │ gzip:    52.07 kB[22m
+14:59:25 | DEBUG | #16 32.05 - Using dynamic import() to code-split the application
+14:59:25 | DEBUG | #16 32.05 (!) Some chunks are larger than 500 kB after minification. Consider:
+14:59:25 | DEBUG | #16 32.06 [2mdist/[22m[2massets/[22m[36mindex-DAQOmnfr.js     [39m[1m[2m  436.03 kB[22m[1m[22m[2m │ gzip:   121.21 kB[22m
+14:59:25 | DEBUG | #16 32.06 [2mdist/[22m[2massets/[22m[36mhtml2pdf-DgUET4lE.js  [39m[1m[33m  983.89 kB[39m[22m[2m │ gzip:   285.54 kB[22m
+14:59:25 | DEBUG | #16 32.06 [32m✓ built in 25.74s[39m
+14:59:25 | DEBUG | #16 32.06 [2mdist/[22m[2massets/[22m[36mApp-Di_jjOm2.js       [39m[1m[33m6,148.02 kB[39m[22m[2m │ gzip: 1,515.60 kB[22m
+14:59:25 | DEBUG | #16 32.05 [33m
+14:59:25 | DEBUG | #16 32.05 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+14:59:25 | DEBUG | #16 32.05 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+14:59:25 | DEBUG | #16 32.25 ✘ [ERROR] Unexpected ")"
+14:59:25 | DEBUG | #16 32.25       3380 │   });
+14:59:25 | DEBUG | #16 32.25 1 error
+14:59:25 | DEBUG | #16 32.25 
+14:59:25 | DEBUG | #16 32.25     server.ts:3380:3:
+14:59:25 | DEBUG | #16 32.25            ╵    ^
+14:59:25 | DEBUG | #16 32.25 
+14:59:27 | DEBUG | #16 ERROR: process "/bin/sh -c npm install --legacy-peer-deps && npm run build" did not complete successfully: exit code: 1
+14:59:27 | DEBUG |  > [12/12] RUN npm install --legacy-peer-deps && npm run build:
+14:59:27 | DEBUG | 32.25 
+14:59:27 | DEBUG | 32.25 
+14:59:27 | DEBUG | 32.06 [2mdist/[22m[2massets/[22m[36mhtml2pdf-DgUET4lE.js  [39m[1m[33m  983.89 kB[39m[22m[2m │ gzip:   285.54 kB[22m
+14:59:27 | DEBUG | 32.06 [2mdist/[22m[2massets/[22m[36mApp-Di_jjOm2.js       [39m[1m[33m6,148.02 kB[39m[22m[2m │ gzip: 1,515.60 kB[22m
+14:59:27 | DEBUG | ------
+14:59:27 | DEBUG | 32.06 [32m✓ built in 25.74s[39m
+14:59:27 | DEBUG | 32.25     server.ts:3380:3:
+14:59:27 | DEBUG | 32.25            ╵    ^
+14:59:27 | DEBUG | 32.25       3380 │   });
+14:59:27 | DEBUG | 32.25 ✘ [ERROR] Unexpected ")"
+14:59:27 | DEBUG | ------
+14:59:27 | DEBUG | 32.25 1 error
+14:59:27 | DEBUG |   90 |     # Run build command if provided
+14:59:27 | DEBUG | --------------------
+14:59:27 | DEBUG | Dockerfile:92
+14:59:27 | DEBUG |   94 |     
+14:59:27 | DEBUG |   92 | >>> RUN npm install --legacy-peer-deps && npm run build
+14:59:27 | DEBUG |   93 |     
+14:59:27 | INFO | error: failed to solve: process "/bin/sh -c npm install --legacy-peer-deps && npm run build" did not complete successfully: exit code: 1
+14:59:27 | DEBUG | --------------------
+14:59:27 | DEBUG |   91 |     
+14:59:27 | INFO | Build failed

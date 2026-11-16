@@ -1,0 +1,42 @@
+name: Build Windows ERP Edge EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies and Electron builder
+        run: |
+          npm install --legacy-peer-deps
+          npm install --no-save --legacy-peer-deps electron electron-builder
+
+      - name: Build frontend + Edge server + Windows EXE
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
+        run: |
+          npm run build:exe
+          if (-not (Test-Path "dist/index.html")) { throw "dist/index.html missing after vite build!" }
+
+      - name: Upload Windows Installer & Portable EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: ERP-Ceh-Server-Windows-EXE
+          path: |
+            release/ERP-Ceh-Setup-*.exe
+            release/ERP-Ceh-Portable-*.exe
+          if-no-files-found: error

@@ -1,0 +1,124 @@
+  companyData,
+  companyData: any;
+    const url = companyData?.bitrix24?.webhookUrl;
+  }, [activeSubTab, companyData?.bitrix24?.webhookUrl]);
+    const url = companyData?.bitrix24?.webhookUrl;
+    const catId = companyData?.bitrix24?.categoryId || "0";
+  }, [activeSubTab, companyData?.bitrix24?.webhookUrl, companyData?.bitrix24?.categoryId]);
+    companyData,
+                      value={companyData?.bitrix24?.webhookUrl || ""}
+                        const url = companyData?.bitrix24?.webhookUrl;
+                            const catId = companyData?.bitrix24?.categoryId || "0";
+                          value={companyData?.bitrix24?.categoryId || "0"}
+                            const url = companyData?.bitrix24?.webhookUrl;
+                          value={companyData?.bitrix24?.categoryId || ""}
+                          value={companyData?.bitrix24?.stageId || ""}
+                          value={companyData?.bitrix24?.stageId || ""}
+                                  companyData?.bitrix24?.fieldMappings?.[
+                                    ...(companyData?.bitrix24?.fieldMappings ||
+              companyType={companyData?.type}
+    if (!companyData?.id) return;
+        doc(db, "companies", companyData.id, "products", productId.toString()),
+        `companies/${companyData.id}/products/${productId}`,
+  const [companyData, setCompanyData] = useState<any>(null);
+    if (!companyData?.id || !userData?.uid || oldPrice === newPrice) return;
+      companyData.id,
+  }, [companyData?.id, userData?.uid, userData?.displayName, userData?.email]);
+    if (companyData?.type) {
+      if (companyData.type === "Мебельное производство") {
+  }, [companyData?.type]);
+    if (!companyData?.id) return;
+      : query(collection(db, "companies"), where("manufacturerId", "==", companyData.id));
+        (c) => c.manufacturerId === companyData.id,
+  }, [companyData?.id, isAppAdmin]);
+    if (!isAuthenticated || !companyData?.id) return;
+    const companyId = companyData.id;
+    if (companyData?.manufacturerId) {
+        collection(db, "companies", companyData.manufacturerId, "products"),
+            `companies/${companyData.manufacturerId}/products`,
+    companyData?.id,
+    companyData?.manufacturerId,
+    if (!isAuthenticated || !companyData?.id || !userData?.uid) return;
+        collection(db, "companies", companyData.id, "projects"),
+        collection(db, "companies", companyData.id, "sets"),
+        collection(db, "companies", companyData.id, "projects"),
+        collection(db, "companies", companyData.id, "sets"),
+        collection(db, "companies", companyData.id, "projects"),
+        collection(db, "companies", companyData.id, "sets"),
+  }, [isAuthenticated, companyData?.id, userData?.uid, userRole]);
+    if (!companyData?.id || !userData?.uid) return;
+        doc(db, "companies", companyData.id, "projects", projectId),
+        `companies/${companyData.id}/projects`,
+    if (!ownProductionConfig || !companyData?.id) return;
+  }, [ownProductionConfig, companyData?.id]);
+    if (!companyData?.id || !userData?.uid) return;
+          const projectDocRef = doc(db, "companies", companyData.id, "projects", p.id);
+          const setDocRef = doc(db, "companies", companyData.id, "sets", setId);
+            const projectDocRef = doc(db, "companies", companyData.id, "projects", pId);
+        `companies/${companyData.id}/sets`,
+    console.log("saveProduct called, companyData?.id:", companyData?.id, "userData?.uid:", userData?.uid, "product:", product);
+    if (!companyData?.id || !userData?.uid) {
+      console.log("saveProduct failed: missing companyData or userData");
+        doc(db, "companies", companyData.id, "products", pId),
+        `companies/${companyData.id}/products`,
+    if (!companyData?.id || userRole !== "admin") return;
+        doc(db, "companies", companyData.id, "settings", "categories"),
+        `companies/${companyData.id}/settings/categories`,
+    if (!companyData?.id) return;
+        doc(db, "companies", companyData.id, "products", productId.toString()),
+            `companies/${companyData.id}/products/${productId}`,
+        `companies/${companyData.id}/products/${productId}`,
+    if (!companyData?.id) return;
+        companyData?.type === "Мебельное производство";
+        doc(db, "companies", companyData.id, "settings", "production"),
+        doc(db, "companies", companyData.id),
+        `companies/${companyData.id}/settings/production`,
+    if (!companyData?.id) return;
+    console.log("DEBUG: Current companyData.bitrix24:", companyData.bitrix24);
+        doc(db, "companies", companyData.id, "settings", "general"),
+        doc(db, "companies", companyData.id, "settings", "prices"),
+        companyData.type === "Мебельное производство" ||
+          doc(db, "companies", companyData.id, "settings", "production"),
+      console.log("DEBUG: Syncing company doc with bitrix24:", companyData.bitrix24);
+        doc(db, "companies", companyData.id),
+          name: companyInfo?.name || companyData.name || "",
+          phone: companyInfo?.phone || companyData.phone || "",
+          city: companyInfo?.city || companyData.city || "",
+          bitrix24: companyData.bitrix24 || null,
+        `companies/${companyData.id}/settings/general`,
+    if (!companyData?.id) return;
+        doc(db, "companies", companyData.id, "settings", "promotions"),
+    if (productionFormat === "contract" && companyData?.manufacturerId) {
+          companyData.manufacturerId,
+              companyData.id,
+              data.salonCoefficients[companyData.id]
+                data.salonCoefficients[companyData.id],
+            `companies/${companyData?.manufacturerId}/settings/production`,
+  }, [productionFormat, companyData?.manufacturerId, companyData?.id]);
+      companyData?.type === "Мебельное производство"
+    companyData?.type,
+          companyData?.type === "Мебельное производство"
+              {companyData && (
+                      (c) => c.id === companyData?.manufacturerId,
+                  {companyData?.name && (
+                      {companyData.name}
+                      {companyData?.type === "Салон"
+                        : companyData?.type === "Дизайнер"
+              isProduction={companyData?.type === "Мебельное производство"}
+              companyType={companyData?.type}
+              companyId={companyData?.id}
+              companyType={companyData?.type}
+              manufacturerId={companyData?.manufacturerId}
+              companyData={companyData}
+              companyType={companyData?.type}
+                companyData?.type === "Мебельное производство" ||
+          ) : historyMaterialId && companyData ? (
+              companyId={companyData.id}
+              companyType={companyData?.type}
+              companyId={companyData?.id}
+              companyId={companyData?.id}
+              companyType={companyData?.type}
+              companyData={companyData}
+              companyType={companyData?.type}
+              companyId={companyData?.id || ""}
+              manufacturerId={companyData?.manufacturerId}

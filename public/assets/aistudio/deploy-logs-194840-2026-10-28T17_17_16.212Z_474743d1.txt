@@ -1,0 +1,510 @@
+19:56:17 | DEBUG | Cloning into '/workspace'...
+19:56:18 | DEBUG | 
+19:56:18 | DEBUG | Note: switching to '2fec5e01da362123749f662717d5d0ebf792dca0'.
+19:56:18 | DEBUG | 
+19:56:18 | DEBUG | do so (now or later) by using -c with the switch command. Example:
+19:56:18 | DEBUG | 
+19:56:18 | DEBUG |   git switch -c <new-branch-name>
+19:56:18 | DEBUG | If you want to create a new branch to retain commits you create, you may
+19:56:18 | DEBUG | You are in 'detached HEAD' state. You can look around, make experimental
+19:56:18 | DEBUG | state without impacting any branches by switching back to a branch.
+19:56:18 | DEBUG | changes and commit them, and you can discard any commits you make in this
+19:56:18 | DEBUG | 
+19:56:18 | DEBUG | 
+19:56:18 | DEBUG | Or undo this operation with:
+19:56:18 | DEBUG | 
+19:56:18 | DEBUG | HEAD is now at 2fec5e0 feat: Add PRO100 & B3D CAD parsing, glued panel splitting, and sheet material rules
+19:56:18 | DEBUG |   git switch -
+19:56:18 | DEBUG | 
+19:56:18 | DEBUG | Turn off this advice by setting config variable advice.detachedHead to false
+19:56:22 | DEBUG | 
+19:56:22 | DEBUG | #2 [internal] load metadata for docker.io/library/node:24-slim
+19:56:22 | DEBUG | #1 [internal] load build definition from Dockerfile
+19:56:22 | DEBUG | #1 DONE 0.1s
+19:56:22 | INFO | Build started
+19:56:22 | DEBUG | #1 transferring dockerfile: 2.73kB 0.0s done
+19:56:24 | DEBUG | #2 DONE 3.7s
+19:56:24 | DEBUG | 
+19:56:24 | DEBUG | #4 CACHED
+19:56:24 | DEBUG | #4 resolve docker.io/library/node:24-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c done
+19:56:24 | DEBUG | #3 [internal] load .dockerignore
+19:56:24 | DEBUG | 
+19:56:24 | DEBUG | #5 [internal] load build context
+19:56:24 | DEBUG | 
+19:56:24 | DEBUG | #3 transferring context: 106B done
+19:56:24 | DEBUG | #3 DONE 0.0s
+19:56:24 | DEBUG | #4 [ 1/12] FROM docker.io/library/node:24-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c
+19:56:25 | DEBUG | #5 transferring context: 17.38MB 0.4s done
+19:56:25 | DEBUG | 
+19:56:25 | DEBUG | #6 [ 2/12] RUN corepack enable
+19:56:25 | DEBUG | #5 DONE 0.4s
+19:56:25 | DEBUG | #7 [ 3/12] RUN if [ -d /etc/apt ]; then       printf '%s\tpriority:1\n%s\tpriority:2\n%s\tpriority:3\n%s\tpriority:4\n' http://mirror.timeweb.ru/debian http://mirror.yandex.ru/debian http://mirror.selectel.ru/debian http://deb.debian.org/debian > /etc/apt/mirrors-debian.list;       printf '%s\tpriority:1\n%s\tpriority:2\n%s\tpriority:3\n' http://mirror.yandex.ru/debian-security http://mirror.selectel.ru/debian-security http://deb.debian.org/debian-security > /etc/apt/mirrors-debian-security.list;       for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do         if [ -f "$f" ]; then           sed -i -E             -e 's#https?://(deb|security)\.debian\.org/debian-security/?( |$)#mirror+file:/etc/apt/mirrors-debian-security.list\2#g'             -e 's#https?://deb\.debian\.org/debian/?( |$)#mirror+file:/etc/apt/mirrors-debian.list\1#g'             "$f";         fi;       done;       if grep -qs 'mirror+file:' /etc/apt/sources.list /etc/apt/sources.list.d/*; then         mkdir -p /etc/apt/apt.conf.d;         printf '%s\n' 'Acquire::Retries "0";' 'Acquire::http::Timeout "10";' > /etc/apt/apt.conf.d/99-mirror-fallback;       fi;     fi
+19:56:25 | DEBUG | #6 DONE 0.4s
+19:56:25 | DEBUG | 
+19:56:25 | DEBUG | #7 DONE 0.2s
+19:56:25 | DEBUG | #8 [ 4/12] RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y --no-install-recommends     curl     && rm -rf /var/lib/apt/lists/*
+19:56:25 | DEBUG | 
+19:56:25 | DEBUG | #8 0.081 Get:1 file:/etc/apt/mirrors-debian.list Mirrorlist [169 B]
+19:56:25 | DEBUG | #8 0.098 Get:3 http://mirror.timeweb.ru/debian bookworm InRelease [151 kB]
+19:56:25 | DEBUG | #8 0.081 Get:2 file:/etc/apt/mirrors-debian-security.list Mirrorlist [153 B]
+19:56:25 | DEBUG | #8 0.128 Get:5 http://mirror.yandex.ru/debian-security bookworm-security InRelease [34.8 kB]
+19:56:25 | DEBUG | #8 0.189 Get:6 http://mirror.timeweb.ru/debian bookworm/main amd64 Packages [8790 kB]
+19:56:25 | DEBUG | #8 0.325 Get:8 http://mirror.yandex.ru/debian-security bookworm-security/main amd64 Packages [358 kB]
+19:56:25 | DEBUG | #8 0.110 Get:4 http://mirror.timeweb.ru/debian bookworm-updates InRelease [55.4 kB]
+19:56:25 | DEBUG | #8 0.434 Get:7 http://mirror.timeweb.ru/debian bookworm-updates/main amd64 Packages [6924 B]
+19:56:27 | DEBUG | #8 1.651 Fetched 9397 kB in 2s (5974 kB/s)
+19:56:27 | DEBUG | #8 1.651 Reading package lists...
+19:56:28 | DEBUG | #8 2.241 Reading package lists...
+19:56:28 | DEBUG | #8 2.850 Building dependency tree...
+19:56:28 | DEBUG | #8 3.046 Reading state information...
+19:56:28 | DEBUG | #8 3.313 The following additional packages will be installed:
+19:56:28 | DEBUG | #8 3.320 Suggested packages:
+19:56:28 | DEBUG | #8 3.316   libsasl2-modules-db libssh2-1 libssl3
+19:56:28 | DEBUG | #8 3.437 The following NEW packages will be installed:
+19:56:28 | DEBUG | #8 3.320 Recommended packages:
+19:56:28 | DEBUG | #8 3.316   libkrb5support0 libldap-2.5-0 libnghttp2-14 libpsl5 librtmp1 libsasl2-2
+19:56:28 | DEBUG | #8 3.320   ca-certificates krb5-locales libldap-common publicsuffix libsasl2-modules
+19:56:28 | DEBUG | #8 3.320   krb5-doc krb5-user
+19:56:28 | DEBUG | #8 3.314   libbrotli1 libcurl4 libgssapi-krb5-2 libk5crypto3 libkeyutils1 libkrb5-3
+19:56:28 | DEBUG | #8 3.540 Get:3 http://mirror.yandex.ru/debian-security bookworm-security/main amd64 libbrotli1 amd64 1.0.9-2+deb12u1 [275 kB]
+19:56:28 | DEBUG | #8 3.438   curl libbrotli1 libcurl4 libgssapi-krb5-2 libk5crypto3 libkeyutils1
+19:56:28 | DEBUG | #8 3.482 0 upgraded, 16 newly installed, 0 to remove and 0 not upgraded.
+19:56:28 | DEBUG | #8 3.439   libsasl2-2 libsasl2-modules-db libssh2-1 libssl3
+19:56:28 | DEBUG | #8 3.483 Get:2 file:/etc/apt/mirrors-debian.list Mirrorlist [169 B]
+19:56:28 | DEBUG | #8 3.482 Need to get 4243 kB of archives.
+19:56:28 | DEBUG | #8 3.438   libkrb5-3 libkrb5support0 libldap-2.5-0 libnghttp2-14 libpsl5 librtmp1
+19:56:28 | DEBUG | #8 3.482 Get:1 file:/etc/apt/mirrors-debian-security.list Mirrorlist [153 B]
+19:56:28 | DEBUG | #8 3.482 After this operation, 12.0 MB of additional disk space will be used.
+19:56:29 | DEBUG | #8 3.594 Get:5 http://mirror.timeweb.ru/debian bookworm/main amd64 libkrb5support0 amd64 1.20.1-2+deb12u5 [33.2 kB]
+19:56:29 | DEBUG | #8 3.661 Get:16 http://mirror.yandex.ru/debian-security bookworm-security/main amd64 libssh2-1 amd64 1.10.0-3+deb12u1 [176 kB]
+19:56:29 | DEBUG | #8 3.616 Get:4 http://mirror.yandex.ru/debian-security bookworm-security/main amd64 libssl3 amd64 3.0.22-1~deb12u2 [2040 kB]
+19:56:29 | DEBUG | #8 3.705 Get:7 http://mirror.timeweb.ru/debian bookworm/main amd64 libkeyutils1 amd64 1.6.3-2 [8808 B]
+19:56:29 | DEBUG | #8 3.705 Get:8 http://mirror.timeweb.ru/debian bookworm/main amd64 libkrb5-3 amd64 1.20.1-2+deb12u5 [332 kB]
+19:56:29 | DEBUG | #8 3.669 Get:6 http://mirror.timeweb.ru/debian bookworm/main amd64 libk5crypto3 amd64 1.20.1-2+deb12u5 [79.7 kB]
+19:56:29 | DEBUG | #8 3.785 Get:9 http://mirror.timeweb.ru/debian bookworm/main amd64 libgssapi-krb5-2 amd64 1.20.1-2+deb12u5 [135 kB]
+19:56:29 | DEBUG | #8 3.831 Get:11 http://mirror.timeweb.ru/debian bookworm/main amd64 libsasl2-2 amd64 2.1.28+dfsg-10 [59.7 kB]
+19:56:29 | DEBUG | #8 3.864 Get:12 http://mirror.timeweb.ru/debian bookworm/main amd64 libldap-2.5-0 amd64 2.5.13+dfsg-5 [183 kB]
+19:56:29 | DEBUG | #8 3.831 Get:10 http://mirror.timeweb.ru/debian bookworm/main amd64 libsasl2-modules-db amd64 2.1.28+dfsg-10 [20.3 kB]
+19:56:29 | DEBUG | #8 3.899 Get:13 http://mirror.timeweb.ru/debian bookworm/main amd64 libnghttp2-14 amd64 1.52.0-1+deb12u3 [72.4 kB]
+19:56:29 | DEBUG | #8 3.926 Get:15 http://mirror.timeweb.ru/debian bookworm/main amd64 librtmp1 amd64 2.4+20151223.gitfa8646d.1-2+b2 [60.8 kB]
+19:56:29 | DEBUG | #8 3.900 Get:14 http://mirror.timeweb.ru/debian bookworm/main amd64 libpsl5 amd64 0.21.2-1 [58.7 kB]
+19:56:29 | DEBUG | #8 3.931 Get:17 http://mirror.timeweb.ru/debian bookworm/main amd64 libcurl4 amd64 7.88.1-10+deb12u15 [392 kB]
+19:56:29 | DEBUG | #8 3.993 Get:18 http://mirror.timeweb.ru/debian bookworm/main amd64 curl amd64 7.88.1-10+deb12u15 [316 kB]
+19:56:29 | DEBUG | #8 4.236 debconf: delaying package configuration, since apt-utils is not installed
+19:56:29 | DEBUG | #8 4.357 Selecting previously unselected package libbrotli1:amd64.
+19:56:29 | DEBUG | #8 4.286 Fetched 4243 kB in 1s (7399 kB/s)
+19:56:29 | DEBUG | #8 4.450 Selecting previously unselected package libkrb5support0:amd64.
+19:56:29 | DEBUG | #8 4.451 Preparing to unpack .../01-libkrb5support0_1.20.1-2+deb12u5_amd64.deb ...
+19:56:29 | DEBUG | #8 4.455 Unpacking libkrb5support0:amd64 (1.20.1-2+deb12u5) ...
+19:56:29 | DEBUG | #8 4.362 Preparing to unpack .../00-libbrotli1_1.0.9-2+deb12u1_amd64.deb ...
+19:56:29 | DEBUG | #8 4.373 Unpacking libbrotli1:amd64 (1.0.9-2+deb12u1) ...
+19:56:29 | DEBUG | #8 4.522 Selecting previously unselected package libk5crypto3:amd64.
+19:56:29 | DEBUG | #8 4.357 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 6096 files and directories currently installed.)
+19:56:30 | DEBUG | #8 4.711 Selecting previously unselected package libssl3:amd64.
+19:56:30 | DEBUG | #8 4.598 Unpacking libkeyutils1:amd64 (1.6.3-2) ...
+19:56:30 | DEBUG | #8 4.526 Unpacking libk5crypto3:amd64 (1.20.1-2+deb12u5) ...
+19:56:30 | DEBUG | #8 4.591 Selecting previously unselected package libkeyutils1:amd64.
+19:56:30 | DEBUG | #8 4.523 Preparing to unpack .../02-libk5crypto3_1.20.1-2+deb12u5_amd64.deb ...
+19:56:30 | DEBUG | #8 4.593 Preparing to unpack .../03-libkeyutils1_1.6.3-2_amd64.deb ...
+19:56:30 | DEBUG | #8 4.712 Preparing to unpack .../04-libssl3_3.0.22-1~deb12u2_amd64.deb ...
+19:56:30 | DEBUG | #8 4.714 Unpacking libssl3:amd64 (3.0.22-1~deb12u2) ...
+19:56:30 | DEBUG | #8 4.889 Selecting previously unselected package libkrb5-3:amd64.
+19:56:30 | DEBUG | #8 4.890 Preparing to unpack .../05-libkrb5-3_1.20.1-2+deb12u5_amd64.deb ...
+19:56:30 | DEBUG | #8 4.894 Unpacking libkrb5-3:amd64 (1.20.1-2+deb12u5) ...
+19:56:30 | DEBUG | #8 4.994 Selecting previously unselected package libgssapi-krb5-2:amd64.
+19:56:30 | DEBUG | #8 5.002 Unpacking libgssapi-krb5-2:amd64 (1.20.1-2+deb12u5) ...
+19:56:30 | DEBUG | #8 4.997 Preparing to unpack .../06-libgssapi-krb5-2_1.20.1-2+deb12u5_amd64.deb ...
+19:56:30 | DEBUG | #8 5.124 Selecting previously unselected package libsasl2-modules-db:amd64.
+19:56:30 | DEBUG | #8 5.138 Unpacking libsasl2-modules-db:amd64 (2.1.28+dfsg-10) ...
+19:56:30 | DEBUG | #8 5.240 Selecting previously unselected package libsasl2-2:amd64.
+19:56:30 | DEBUG | #8 5.240 Preparing to unpack .../08-libsasl2-2_2.1.28+dfsg-10_amd64.deb ...
+19:56:30 | DEBUG | #8 5.125 Preparing to unpack .../07-libsasl2-modules-db_2.1.28+dfsg-10_amd64.deb ...
+19:56:30 | DEBUG | #8 5.246 Unpacking libsasl2-2:amd64 (2.1.28+dfsg-10) ...
+19:56:30 | DEBUG | #8 5.311 Selecting previously unselected package libldap-2.5-0:amd64.
+19:56:30 | DEBUG | #8 5.312 Preparing to unpack .../09-libldap-2.5-0_2.5.13+dfsg-5_amd64.deb ...
+19:56:30 | DEBUG | #8 5.341 Unpacking libldap-2.5-0:amd64 (2.5.13+dfsg-5) ...
+19:56:30 | DEBUG | #8 5.453 Selecting previously unselected package libpsl5:amd64.
+19:56:30 | DEBUG | #8 5.400 Selecting previously unselected package libnghttp2-14:amd64.
+19:56:30 | DEBUG | #8 5.404 Unpacking libnghttp2-14:amd64 (1.52.0-1+deb12u3) ...
+19:56:30 | DEBUG | #8 5.453 Preparing to unpack .../11-libpsl5_0.21.2-1_amd64.deb ...
+19:56:30 | DEBUG | #8 5.401 Preparing to unpack .../10-libnghttp2-14_1.52.0-1+deb12u3_amd64.deb ...
+19:56:31 | DEBUG | #8 5.505 Selecting previously unselected package librtmp1:amd64.
+19:56:31 | DEBUG | #8 5.509 Preparing to unpack .../12-librtmp1_2.4+20151223.gitfa8646d.1-2+b2_amd64.deb ...
+19:56:31 | DEBUG | #8 5.528 Unpacking librtmp1:amd64 (2.4+20151223.gitfa8646d.1-2+b2) ...
+19:56:31 | DEBUG | #8 5.458 Unpacking libpsl5:amd64 (0.21.2-1) ...
+19:56:31 | DEBUG | #8 5.941 Selecting previously unselected package libssh2-1:amd64.
+19:56:31 | DEBUG | #8 5.942 Preparing to unpack .../13-libssh2-1_1.10.0-3+deb12u1_amd64.deb ...
+19:56:31 | DEBUG | #8 5.961 Unpacking libssh2-1:amd64 (1.10.0-3+deb12u1) ...
+19:56:31 | DEBUG | #8 6.034 Selecting previously unselected package libcurl4:amd64.
+19:56:31 | DEBUG | #8 6.133 Selecting previously unselected package curl.
+19:56:31 | DEBUG | #8 6.036 Preparing to unpack .../14-libcurl4_7.88.1-10+deb12u15_amd64.deb ...
+19:56:31 | DEBUG | #8 6.039 Unpacking libcurl4:amd64 (7.88.1-10+deb12u15) ...
+19:56:31 | DEBUG | #8 6.137 Unpacking curl (7.88.1-10+deb12u15) ...
+19:56:31 | DEBUG | #8 6.239 Setting up libpsl5:amd64 (0.21.2-1) ...
+19:56:31 | DEBUG | #8 6.224 Setting up libkeyutils1:amd64 (1.6.3-2) ...
+19:56:31 | DEBUG | #8 6.134 Preparing to unpack .../15-curl_7.88.1-10+deb12u15_amd64.deb ...
+19:56:31 | DEBUG | #8 6.312 Setting up libk5crypto3:amd64 (1.20.1-2+deb12u5) ...
+19:56:31 | DEBUG | #8 6.274 Setting up libnghttp2-14:amd64 (1.52.0-1+deb12u3) ...
+19:56:31 | DEBUG | #8 6.283 Setting up libkrb5support0:amd64 (1.20.1-2+deb12u5) ...
+19:56:31 | DEBUG | #8 6.291 Setting up libsasl2-modules-db:amd64 (2.1.28+dfsg-10) ...
+19:56:31 | DEBUG | #8 6.351 Setting up libssh2-1:amd64 (1.10.0-3+deb12u1) ...
+19:56:31 | DEBUG | #8 6.248 Setting up libbrotli1:amd64 (1.0.9-2+deb12u1) ...
+19:56:31 | DEBUG | #8 6.264 Setting up libssl3:amd64 (3.0.22-1~deb12u2) ...
+19:56:31 | DEBUG | #8 6.334 Setting up libsasl2-2:amd64 (2.1.28+dfsg-10) ...
+19:56:31 | DEBUG | #8 6.303 Setting up librtmp1:amd64 (2.4+20151223.gitfa8646d.1-2+b2) ...
+19:56:31 | DEBUG | #8 6.378 Setting up libgssapi-krb5-2:amd64 (1.20.1-2+deb12u5) ...
+19:56:31 | DEBUG | #8 6.367 Setting up libldap-2.5-0:amd64 (2.5.13+dfsg-5) ...
+19:56:31 | DEBUG | #8 6.359 Setting up libkrb5-3:amd64 (1.20.1-2+deb12u5) ...
+19:56:31 | DEBUG | #8 6.409 Setting up curl (7.88.1-10+deb12u15) ...
+19:56:31 | DEBUG | #8 6.430 Processing triggers for libc-bin (2.36-9+deb12u14) ...
+19:56:31 | DEBUG | #8 6.394 Setting up libcurl4:amd64 (7.88.1-10+deb12u15) ...
+19:56:32 | DEBUG | #8 DONE 6.6s
+19:56:32 | DEBUG | 
+19:56:32 | DEBUG | #9 [ 5/12] RUN npm install -g pm2
+19:56:35 | DEBUG | #9 3.589 added 45 packages in 3s
+19:56:35 | DEBUG | #9 3.589 
+19:56:35 | DEBUG | #9 3.594 
+19:56:35 | DEBUG | #9 3.594 6 packages are looking for funding
+19:56:35 | DEBUG | #9 3.594   run `npm fund` for details
+19:56:36 | DEBUG | #9 DONE 4.6s
+19:56:36 | DEBUG | #10 [ 6/12] RUN groupadd --gid 2000 app && useradd --uid 2000 --gid 2000 -m -s /bin/bash app
+19:56:36 | DEBUG | 
+19:56:37 | DEBUG | #10 DONE 0.3s
+19:56:37 | DEBUG | #11 [ 7/12] WORKDIR /app
+19:56:37 | DEBUG | #11 DONE 0.1s
+19:56:37 | DEBUG | #12 [ 8/12] COPY package.json pnpm-lock.yaml* package-lock.json* pnpm-workspace.yaml* ./
+19:56:37 | DEBUG | 
+19:56:37 | DEBUG | 
+19:56:37 | DEBUG | #12 DONE 0.1s
+19:56:37 | DEBUG | 
+19:56:37 | DEBUG | #13 0.111 No lockfile, fallback to basic install
+19:56:37 | DEBUG | #13 [ 9/12] RUN if [ -f pnpm-lock.yaml ]; then       echo "Detected pnpm workspace";       corepack prepare pnpm --activate && pnpm install --frozen-lockfile;     elif [ -f package-lock.json ]; then       echo "Detected npm project";       npm ci;     else       echo "No lockfile, fallback to basic install";       npm install;     fi
+19:57:22 | DEBUG | #13 45.69 npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+19:57:49 | DEBUG | #13 72.15 
+19:57:49 | DEBUG | #13 72.15 added 425 packages, and audited 426 packages in 1m
+19:57:49 | DEBUG | #13 72.15   run `npm fund` for details
+19:57:49 | DEBUG | #13 72.15 46 packages are looking for funding
+19:57:49 | DEBUG | #13 72.15 
+19:57:49 | DEBUG | #13 72.46 Run `npm audit` for details.
+19:57:49 | DEBUG | #13 72.46 To address all issues possible (including breaking changes), run:
+19:57:49 | DEBUG | #13 72.46 
+19:57:49 | DEBUG | #13 72.46 
+19:57:49 | DEBUG | #13 72.46 a different dependency.
+19:57:49 | DEBUG | #13 72.46 
+19:57:49 | DEBUG | #13 72.46 5 high severity vulnerabilities
+19:57:49 | DEBUG | #13 72.46 
+19:57:49 | DEBUG | #13 72.46 Some issues need review, and may require choosing
+19:57:49 | DEBUG | #13 72.46   npm audit fix --force
+19:57:49 | DEBUG | #13 72.46 npm warn install-scripts 6 packages have install scripts not yet covered by allowScripts:
+19:57:49 | DEBUG | #13 72.46 npm warn install-scripts   @google/genai@1.52.0 (preinstall: echo 'preinstall: no-op')
+19:57:49 | DEBUG | #13 72.46 npm warn install-scripts   @firebase/util@1.15.3 (postinstall: node ./postinstall.js)
+19:57:49 | DEBUG | #13 72.46 npm warn install-scripts   esbuild@0.28.2 (postinstall: node install.js)
+19:57:49 | DEBUG | #13 72.46 npm warn install-scripts   protobufjs@7.6.6 (postinstall: node scripts/postinstall)
+19:57:49 | DEBUG | #13 72.46 npm warn install-scripts   esbuild@0.25.12 (postinstall: node install.js)
+19:57:49 | DEBUG | #13 72.46 npm warn install-scripts
+19:57:49 | DEBUG | #13 72.46 npm warn install-scripts   core-js@3.51.0 (postinstall: node -e "try{require('./postinstall')}catch(e){}")
+19:57:49 | DEBUG | #13 72.46 npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+19:57:55 | DEBUG | #13 DONE 77.9s
+19:57:55 | DEBUG | #14 [10/12] WORKDIR /app
+19:57:55 | DEBUG | 
+19:57:57 | DEBUG | #14 DONE 2.4s
+19:57:57 | DEBUG | #15 [11/12] COPY --chown=app:app . .
+19:57:57 | DEBUG | 
+19:57:58 | DEBUG | #15 DONE 0.9s
+19:57:58 | DEBUG | 
+19:57:58 | DEBUG | #16 [12/12] RUN npm install --legacy-peer-deps && npm run build
+19:58:06 | DEBUG | #16 8.553 
+19:58:06 | DEBUG | #16 8.553 
+19:58:06 | DEBUG | #16 8.553 removed 26 packages, and audited 400 packages in 8s
+19:58:07 | DEBUG | #16 8.553 41 packages are looking for funding
+19:58:07 | DEBUG | #16 8.553   run `npm fund` for details
+19:58:07 | DEBUG | #16 8.874 
+19:58:07 | DEBUG | #16 8.874 To address all issues possible (including breaking changes), run:
+19:58:07 | DEBUG | #16 8.874   npm audit fix --force
+19:58:07 | DEBUG | #16 8.874 
+19:58:07 | DEBUG | #16 8.874 
+19:58:07 | DEBUG | #16 8.874 
+19:58:07 | DEBUG | #16 8.874 a different dependency.
+19:58:07 | DEBUG | #16 8.874 5 high severity vulnerabilities
+19:58:07 | DEBUG | #16 8.874 Some issues need review, and may require choosing
+19:58:07 | DEBUG | #16 8.874 Run `npm audit` for details.
+19:58:07 | DEBUG | #16 8.876 npm warn install-scripts
+19:58:07 | DEBUG | #16 8.876 npm warn install-scripts   core-js@3.51.0 (postinstall: node -e "try{require('./postinstall')}catch(e){}")
+19:58:07 | DEBUG | #16 8.876 npm warn install-scripts   @google/genai@1.52.0 (preinstall: echo 'preinstall: no-op')
+19:58:07 | DEBUG | #16 8.876 npm warn install-scripts   @firebase/util@1.15.3 (postinstall: node ./postinstall.js)
+19:58:07 | DEBUG | #16 8.876 npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+19:58:07 | DEBUG | #16 8.876 npm warn install-scripts   protobufjs@7.6.6 (postinstall: node scripts/postinstall)
+19:58:07 | DEBUG | #16 8.876 npm warn install-scripts 4 packages have install scripts not yet covered by allowScripts:
+19:58:07 | DEBUG | #16 9.066 > vite build
+19:58:07 | DEBUG | #16 9.066 
+19:58:07 | DEBUG | #16 9.066 
+19:58:07 | DEBUG | #16 9.066 > react-example@0.0.0 build
+19:58:07 | DEBUG | #16 9.073 sh: 1: vite: not found
+19:58:07 | DEBUG | #16 ERROR: process "/bin/sh -c npm install --legacy-peer-deps && npm run build" did not complete successfully: exit code: 127
+19:58:07 | DEBUG | 8.876 npm warn install-scripts
+19:58:07 | DEBUG | 8.876 npm warn install-scripts   @google/genai@1.52.0 (preinstall: echo 'preinstall: no-op')
+19:58:07 | DEBUG | 8.876 npm warn install-scripts   protobufjs@7.6.6 (postinstall: node scripts/postinstall)
+19:58:07 | DEBUG | ------
+19:58:07 | DEBUG |  > [12/12] RUN npm install --legacy-peer-deps && npm run build:
+19:58:07 | DEBUG | 9.066 
+19:58:07 | DEBUG | 9.066 > react-example@0.0.0 build
+19:58:07 | DEBUG | 8.876 npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+19:58:07 | DEBUG | 8.876 npm warn install-scripts   core-js@3.51.0 (postinstall: node -e "try{require('./postinstall')}catch(e){}")
+19:58:07 | DEBUG | 9.066 
+19:58:07 | DEBUG | 9.066 > vite build
+19:58:07 | DEBUG | ------
+19:58:07 | DEBUG | 9.073 sh: 1: vite: not found
+19:58:07 | DEBUG | Dockerfile:92
+19:58:07 | DEBUG | --------------------
+19:58:07 | DEBUG |   94 |     
+19:58:07 | DEBUG |   90 |     # Run build command if provided
+19:58:07 | DEBUG |   92 | >>> RUN npm install --legacy-peer-deps && npm run build
+19:58:07 | DEBUG |   93 |     
+19:58:07 | DEBUG | --------------------
+19:58:07 | DEBUG |   91 |     
+19:58:07 | INFO | error: failed to solve: process "/bin/sh -c npm install --legacy-peer-deps && npm run build" did not complete successfully: exit code: 127
+19:58:07 | INFO | Build failed
+19:58:22 | DEBUG |   git switch -
+19:58:22 | DEBUG |   git switch -c <new-branch-name>
+19:58:22 | DEBUG | 
+19:58:22 | DEBUG | 
+19:58:22 | DEBUG | do so (now or later) by using -c with the switch command. Example:
+19:58:22 | DEBUG | Turn off this advice by setting config variable advice.detachedHead to false
+19:58:22 | DEBUG | You are in 'detached HEAD' state. You can look around, make experimental
+19:58:22 | DEBUG | HEAD is now at 2fec5e0 feat: Add PRO100 & B3D CAD parsing, glued panel splitting, and sheet material rules
+19:58:22 | DEBUG | Cloning into '/workspace'...
+19:58:22 | DEBUG | changes and commit them, and you can discard any commits you make in this
+19:58:22 | DEBUG | 
+19:58:22 | DEBUG | 
+19:58:22 | DEBUG | 
+19:58:22 | DEBUG | 
+19:58:22 | DEBUG | If you want to create a new branch to retain commits you create, you may
+19:58:22 | DEBUG | Note: switching to '2fec5e01da362123749f662717d5d0ebf792dca0'.
+19:58:22 | DEBUG | 
+19:58:22 | DEBUG | state without impacting any branches by switching back to a branch.
+19:58:22 | DEBUG | Or undo this operation with:
+19:58:32 | DEBUG | #1 WARN: NoEmptyContinuation: Empty continuation line (line 53)
+19:58:32 | DEBUG | #1 [internal] load build definition from Dockerfile
+19:58:32 | DEBUG | #1 transferring dockerfile: 2.73kB done
+19:58:32 | DEBUG | #2 [internal] load metadata for docker.io/library/node:24-slim
+19:58:32 | DEBUG | #1 DONE 0.0s
+19:58:32 | INFO | Build started
+19:58:32 | DEBUG | 
+19:58:34 | DEBUG | #2 DONE 2.8s
+19:58:34 | DEBUG | 
+19:58:34 | DEBUG | #3 DONE 0.1s
+19:58:34 | DEBUG | #4 resolve docker.io/library/node:24-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c 0.0s done
+19:58:34 | DEBUG | #3 transferring context: 106B done
+19:58:34 | DEBUG | 
+19:58:34 | DEBUG | #4 [ 1/12] FROM docker.io/library/node:24-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c
+19:58:34 | DEBUG | #4 DONE 0.0s
+19:58:34 | DEBUG | #3 [internal] load .dockerignore
+19:58:34 | DEBUG | 
+19:58:34 | DEBUG | #5 [internal] load build context
+19:58:34 | DEBUG | #12 [ 4/12] RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y --no-install-recommends     curl     && rm -rf /var/lib/apt/lists/*
+19:58:34 | DEBUG | 
+19:58:34 | DEBUG | 
+19:58:34 | DEBUG | #7 [ 9/12] RUN if [ -f pnpm-lock.yaml ]; then       echo "Detected pnpm workspace";       corepack prepare pnpm --activate && pnpm install --frozen-lockfile;     elif [ -f package-lock.json ]; then       echo "Detected npm project";       npm ci;     else       echo "No lockfile, fallback to basic install";       npm install;     fi
+19:58:34 | DEBUG | #14 [ 7/12] WORKDIR /app
+19:58:34 | DEBUG | 
+19:58:34 | DEBUG | #5 DONE 0.4s
+19:58:34 | DEBUG | #6 [ 8/12] COPY package.json pnpm-lock.yaml* package-lock.json* pnpm-workspace.yaml* ./
+19:58:34 | DEBUG | 
+19:58:34 | DEBUG | #13 [ 5/12] RUN npm install -g pm2
+19:58:34 | DEBUG | 
+19:58:34 | DEBUG | #14 CACHED
+19:58:34 | DEBUG | #6 CACHED
+19:58:34 | DEBUG | 
+19:58:34 | DEBUG | 
+19:58:34 | DEBUG | #12 CACHED
+19:58:34 | DEBUG | #15 [11/12] COPY --chown=app:app . .
+19:58:34 | DEBUG | #9 CACHED
+19:58:34 | DEBUG | #13 CACHED
+19:58:34 | DEBUG | #7 CACHED
+19:58:34 | DEBUG | #8 CACHED
+19:58:34 | DEBUG | #16 [12/12] RUN npm install --legacy-peer-deps && npm run build
+19:58:34 | DEBUG | #5 transferring context: 17.38MB 0.4s done
+19:58:34 | DEBUG | #15 CACHED
+19:58:34 | DEBUG | #10 CACHED
+19:58:34 | DEBUG | #9 [ 2/12] RUN corepack enable
+19:58:34 | DEBUG | #11 CACHED
+19:58:34 | DEBUG | 
+19:58:34 | DEBUG | #8 [ 6/12] RUN groupadd --gid 2000 app && useradd --uid 2000 --gid 2000 -m -s /bin/bash app
+19:58:34 | DEBUG | 
+19:58:34 | DEBUG | #10 [ 3/12] RUN if [ -d /etc/apt ]; then       printf '%s\tpriority:1\n%s\tpriority:2\n%s\tpriority:3\n%s\tpriority:4\n' http://mirror.timeweb.ru/debian http://mirror.yandex.ru/debian http://mirror.selectel.ru/debian http://deb.debian.org/debian > /etc/apt/mirrors-debian.list;       printf '%s\tpriority:1\n%s\tpriority:2\n%s\tpriority:3\n' http://mirror.yandex.ru/debian-security http://mirror.selectel.ru/debian-security http://deb.debian.org/debian-security > /etc/apt/mirrors-debian-security.list;       for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do         if [ -f "$f" ]; then           sed -i -E             -e 's#https?://(deb|security)\.debian\.org/debian-security/?( |$)#mirror+file:/etc/apt/mirrors-debian-security.list\2#g'             -e 's#https?://deb\.debian\.org/debian/?( |$)#mirror+file:/etc/apt/mirrors-debian.list\1#g'             "$f";         fi;       done;       if grep -qs 'mirror+file:' /etc/apt/sources.list /etc/apt/sources.list.d/*; then         mkdir -p /etc/apt/apt.conf.d;         printf '%s\n' 'Acquire::Retries "0";' 'Acquire::http::Timeout "10";' > /etc/apt/apt.conf.d/99-mirror-fallback;       fi;     fi
+19:58:34 | DEBUG | 
+19:58:34 | DEBUG | #11 [10/12] WORKDIR /app
+19:58:34 | DEBUG | 
+19:58:38 | DEBUG | #16 4.054 
+19:58:38 | DEBUG | #16 4.054 
+19:58:38 | DEBUG | #16 4.054 removed 26 packages, and audited 400 packages in 4s
+19:58:38 | DEBUG | #16 4.054 41 packages are looking for funding
+19:58:38 | DEBUG | #16 4.054   run `npm fund` for details
+19:58:39 | DEBUG | #16 4.344 5 high severity vulnerabilities
+19:58:39 | DEBUG | #16 4.344 
+19:58:39 | DEBUG | #16 4.344 Some issues need review, and may require choosing
+19:58:39 | DEBUG | #16 4.344 
+19:58:39 | DEBUG | #16 4.344 Run `npm audit` for details.
+19:58:39 | DEBUG | #16 4.344   npm audit fix --force
+19:58:39 | DEBUG | #16 4.344 To address all issues possible (including breaking changes), run:
+19:58:39 | DEBUG | #16 4.344 
+19:58:39 | DEBUG | #16 4.344 
+19:58:39 | DEBUG | #16 4.344 a different dependency.
+19:58:39 | DEBUG | #16 4.346 npm warn install-scripts 4 packages have install scripts not yet covered by allowScripts:
+19:58:39 | DEBUG | #16 4.346 npm warn install-scripts   @firebase/util@1.15.3 (postinstall: node ./postinstall.js)
+19:58:39 | DEBUG | #16 4.496 
+19:58:39 | DEBUG | #16 4.346 npm warn install-scripts   protobufjs@7.6.6 (postinstall: node scripts/postinstall)
+19:58:39 | DEBUG | #16 4.496 > react-example@0.0.0 build
+19:58:39 | DEBUG | #16 4.346 npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+19:58:39 | DEBUG | #16 4.346 npm warn install-scripts   @google/genai@1.52.0 (preinstall: echo 'preinstall: no-op')
+19:58:39 | DEBUG | #16 4.346 npm warn install-scripts   core-js@3.51.0 (postinstall: node -e "try{require('./postinstall')}catch(e){}")
+19:58:39 | DEBUG | #16 4.496 
+19:58:39 | DEBUG | #16 4.346 npm warn install-scripts
+19:58:39 | DEBUG | #16 4.496 > vite build
+19:58:39 | DEBUG | #16 4.512 sh: 1: vite: not found
+19:58:40 | DEBUG | #16 ERROR: process "/bin/sh -c npm install --legacy-peer-deps && npm run build" did not complete successfully: exit code: 127
+19:58:40 | DEBUG | 4.512 sh: 1: vite: not found
+19:58:40 | DEBUG | ------
+19:58:40 | DEBUG | 4.346 npm warn install-scripts   @google/genai@1.52.0 (preinstall: echo 'preinstall: no-op')
+19:58:40 | DEBUG | 4.346 npm warn install-scripts
+19:58:40 | DEBUG | 4.496 
+19:58:40 | DEBUG | 4.346 npm warn install-scripts   protobufjs@7.6.6 (postinstall: node scripts/postinstall)
+19:58:40 | DEBUG | ------
+19:58:40 | DEBUG | 4.496 > react-example@0.0.0 build
+19:58:40 | DEBUG | 4.496 > vite build
+19:58:40 | DEBUG | 4.496 
+19:58:40 | DEBUG |  > [12/12] RUN npm install --legacy-peer-deps && npm run build:
+19:58:40 | DEBUG | 4.346 npm warn install-scripts   core-js@3.51.0 (postinstall: node -e "try{require('./postinstall')}catch(e){}")
+19:58:40 | DEBUG | 4.346 npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+19:58:40 | DEBUG |   91 |     
+19:58:40 | DEBUG |   90 |     # Run build command if provided
+19:58:40 | DEBUG |   93 |     
+19:58:40 | DEBUG | --------------------
+19:58:40 | DEBUG |   94 |     
+19:58:40 | DEBUG | --------------------
+19:58:40 | DEBUG |   92 | >>> RUN npm install --legacy-peer-deps && npm run build
+19:58:40 | DEBUG | Dockerfile:92
+19:58:40 | INFO | error: failed to solve: process "/bin/sh -c npm install --legacy-peer-deps && npm run build" did not complete successfully: exit code: 127
+19:58:40 | INFO | Build failed
+19:59:06 | DEBUG | state without impacting any branches by switching back to a branch.
+19:59:06 | DEBUG | 
+19:59:06 | DEBUG | do so (now or later) by using -c with the switch command. Example:
+19:59:06 | DEBUG | If you want to create a new branch to retain commits you create, you may
+19:59:06 | DEBUG | You are in 'detached HEAD' state. You can look around, make experimental
+19:59:06 | DEBUG | 
+19:59:06 | DEBUG | 
+19:59:06 | DEBUG | 
+19:59:06 | DEBUG | Or undo this operation with:
+19:59:06 | DEBUG | 
+19:59:06 | DEBUG | Turn off this advice by setting config variable advice.detachedHead to false
+19:59:06 | DEBUG | changes and commit them, and you can discard any commits you make in this
+19:59:06 | DEBUG |   git switch -
+19:59:06 | DEBUG |   git switch -c <new-branch-name>
+19:59:06 | DEBUG | HEAD is now at 2fec5e0 feat: Add PRO100 & B3D CAD parsing, glued panel splitting, and sheet material rules
+19:59:06 | DEBUG | 
+19:59:06 | DEBUG | Cloning into '/workspace'...
+19:59:06 | DEBUG | 
+19:59:06 | DEBUG | Note: switching to '2fec5e01da362123749f662717d5d0ebf792dca0'.
+19:59:16 | DEBUG | #1 transferring dockerfile: 2.73kB done
+19:59:16 | INFO | Build started
+19:59:16 | DEBUG | #1 DONE 0.0s
+19:59:16 | DEBUG | #2 [internal] load metadata for docker.io/library/node:24-slim
+19:59:16 | DEBUG | 
+19:59:16 | DEBUG | #1 [internal] load build definition from Dockerfile
+19:59:16 | DEBUG | #1 WARN: NoEmptyContinuation: Empty continuation line (line 53)
+19:59:16 | DEBUG | #2 DONE 4.9s
+19:59:17 | DEBUG | #4 DONE 0.0s
+19:59:17 | DEBUG | 
+19:59:17 | DEBUG | #3 [internal] load .dockerignore
+19:59:17 | DEBUG | #3 DONE 0.0s
+19:59:17 | DEBUG | 
+19:59:17 | DEBUG | #4 resolve docker.io/library/node:24-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c 0.0s done
+19:59:17 | DEBUG | #3 transferring context: 106B done
+19:59:17 | DEBUG | 
+19:59:17 | DEBUG | #4 [ 1/12] FROM docker.io/library/node:24-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c
+19:59:17 | DEBUG | #5 [internal] load build context
+19:59:17 | DEBUG | #7 CACHED
+19:59:17 | DEBUG | 
+19:59:17 | DEBUG | #5 transferring context: 17.38MB 0.2s done
+19:59:17 | DEBUG | #6 [ 9/12] RUN if [ -f pnpm-lock.yaml ]; then       echo "Detected pnpm workspace";       corepack prepare pnpm --activate && pnpm install --frozen-lockfile;     elif [ -f package-lock.json ]; then       echo "Detected npm project";       npm ci;     else       echo "No lockfile, fallback to basic install";       npm install;     fi
+19:59:17 | DEBUG | #7 [10/12] WORKDIR /app
+19:59:17 | DEBUG | #8 [ 5/12] RUN npm install -g pm2
+19:59:17 | DEBUG | 
+19:59:17 | DEBUG | 
+19:59:17 | DEBUG | #5 DONE 0.2s
+19:59:17 | DEBUG | #6 CACHED
+19:59:17 | DEBUG | #15 [11/12] COPY --chown=app:app . .
+19:59:17 | DEBUG | #9 CACHED
+19:59:17 | DEBUG | 
+19:59:17 | DEBUG | 
+19:59:17 | DEBUG | 
+19:59:17 | DEBUG | #14 CACHED
+19:59:17 | DEBUG | #14 [ 7/12] WORKDIR /app
+19:59:17 | DEBUG | #10 [ 2/12] RUN corepack enable
+19:59:17 | DEBUG | #11 CACHED
+19:59:17 | DEBUG | #13 [ 6/12] RUN groupadd --gid 2000 app && useradd --uid 2000 --gid 2000 -m -s /bin/bash app
+19:59:17 | DEBUG | 
+19:59:17 | DEBUG | #13 CACHED
+19:59:17 | DEBUG | 
+19:59:17 | DEBUG | #15 CACHED
+19:59:17 | DEBUG | #12 CACHED
+19:59:17 | DEBUG | #8 CACHED
+19:59:17 | DEBUG | 
+19:59:17 | DEBUG | #9 [ 8/12] COPY package.json pnpm-lock.yaml* package-lock.json* pnpm-workspace.yaml* ./
+19:59:17 | DEBUG | 
+19:59:17 | DEBUG | #12 [ 4/12] RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y --no-install-recommends     curl     && rm -rf /var/lib/apt/lists/*
+19:59:17 | DEBUG | #10 CACHED
+19:59:17 | DEBUG | 
+19:59:17 | DEBUG | #11 [ 3/12] RUN if [ -d /etc/apt ]; then       printf '%s\tpriority:1\n%s\tpriority:2\n%s\tpriority:3\n%s\tpriority:4\n' http://mirror.timeweb.ru/debian http://mirror.yandex.ru/debian http://mirror.selectel.ru/debian http://deb.debian.org/debian > /etc/apt/mirrors-debian.list;       printf '%s\tpriority:1\n%s\tpriority:2\n%s\tpriority:3\n' http://mirror.yandex.ru/debian-security http://mirror.selectel.ru/debian-security http://deb.debian.org/debian-security > /etc/apt/mirrors-debian-security.list;       for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do         if [ -f "$f" ]; then           sed -i -E             -e 's#https?://(deb|security)\.debian\.org/debian-security/?( |$)#mirror+file:/etc/apt/mirrors-debian-security.list\2#g'             -e 's#https?://deb\.debian\.org/debian/?( |$)#mirror+file:/etc/apt/mirrors-debian.list\1#g'             "$f";         fi;       done;       if grep -qs 'mirror+file:' /etc/apt/sources.list /etc/apt/sources.list.d/*; then         mkdir -p /etc/apt/apt.conf.d;         printf '%s\n' 'Acquire::Retries "0";' 'Acquire::http::Timeout "10";' > /etc/apt/apt.conf.d/99-mirror-fallback;       fi;     fi
+19:59:17 | DEBUG | #16 [12/12] RUN npm install --legacy-peer-deps && npm run build
+19:59:23 | DEBUG | #16 5.960 
+19:59:23 | DEBUG | #16 5.960 
+19:59:23 | DEBUG | #16 5.960 removed 26 packages, and audited 400 packages in 6s
+19:59:23 | DEBUG | #16 5.961 41 packages are looking for funding
+19:59:23 | DEBUG | #16 5.961   run `npm fund` for details
+19:59:23 | DEBUG | #16 6.346   npm audit fix --force
+19:59:23 | DEBUG | #16 6.346 Run `npm audit` for details.
+19:59:23 | DEBUG | #16 6.346 To address all issues possible (including breaking changes), run:
+19:59:23 | DEBUG | #16 6.346 
+19:59:23 | DEBUG | #16 6.346 5 high severity vulnerabilities
+19:59:23 | DEBUG | #16 6.346 
+19:59:23 | DEBUG | #16 6.346 Some issues need review, and may require choosing
+19:59:23 | DEBUG | #16 6.346 a different dependency.
+19:59:23 | DEBUG | #16 6.346 
+19:59:23 | DEBUG | #16 6.346 
+19:59:23 | DEBUG | #16 6.350 npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+19:59:23 | DEBUG | #16 6.350 npm warn install-scripts   @firebase/util@1.15.3 (postinstall: node ./postinstall.js)
+19:59:23 | DEBUG | #16 6.350 npm warn install-scripts   protobufjs@7.6.6 (postinstall: node scripts/postinstall)
+19:59:23 | DEBUG | #16 6.350 npm warn install-scripts   @google/genai@1.52.0 (preinstall: echo 'preinstall: no-op')
+19:59:23 | DEBUG | #16 6.350 npm warn install-scripts 4 packages have install scripts not yet covered by allowScripts:
+19:59:23 | DEBUG | #16 6.350 npm warn install-scripts
+19:59:23 | DEBUG | #16 6.350 npm warn install-scripts   core-js@3.51.0 (postinstall: node -e "try{require('./postinstall')}catch(e){}")
+19:59:23 | DEBUG | #16 6.507 
+19:59:23 | DEBUG | #16 6.507 
+19:59:23 | DEBUG | #16 6.507 > vite build
+19:59:23 | DEBUG | #16 6.507 > react-example@0.0.0 build
+19:59:23 | DEBUG | #16 6.512 sh: 1: vite: not found
+19:59:24 | DEBUG | #16 ERROR: process "/bin/sh -c npm install --legacy-peer-deps && npm run build" did not complete successfully: exit code: 127
+19:59:24 | DEBUG | 6.350 npm warn install-scripts
+19:59:24 | DEBUG |  > [12/12] RUN npm install --legacy-peer-deps && npm run build:
+19:59:24 | DEBUG | 6.507 
+19:59:24 | DEBUG | 6.350 npm warn install-scripts   @google/genai@1.52.0 (preinstall: echo 'preinstall: no-op')
+19:59:24 | DEBUG | 6.350 npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+19:59:24 | DEBUG | ------
+19:59:24 | DEBUG | 6.350 npm warn install-scripts   core-js@3.51.0 (postinstall: node -e "try{require('./postinstall')}catch(e){}")
+19:59:24 | DEBUG | 6.507 > react-example@0.0.0 build
+19:59:24 | DEBUG | 6.350 npm warn install-scripts   protobufjs@7.6.6 (postinstall: node scripts/postinstall)
+19:59:24 | DEBUG | ------
+19:59:24 | DEBUG | 6.512 sh: 1: vite: not found
+19:59:24 | DEBUG | 6.507 > vite build
+19:59:24 | DEBUG | 6.507 
+19:59:24 | DEBUG |   93 |     
+19:59:24 | DEBUG |   90 |     # Run build command if provided
+19:59:24 | DEBUG | Dockerfile:92
+19:59:24 | DEBUG |   94 |     
+19:59:24 | DEBUG |   91 |     
+19:59:24 | DEBUG |   92 | >>> RUN npm install --legacy-peer-deps && npm run build
+19:59:24 | DEBUG | --------------------
+19:59:24 | INFO | error: failed to solve: process "/bin/sh -c npm install --legacy-peer-deps && npm run build" did not complete successfully: exit code: 127
+19:59:24 | DEBUG | --------------------
+19:59:24 | INFO | Build failed

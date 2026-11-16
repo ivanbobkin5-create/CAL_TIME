@@ -1,0 +1,459 @@
+import React, { useState } from 'react';
+import { 
+  X, 
+  FileText, 
+  Image as ImageIcon, 
+  Upload, 
+  Send, 
+  Truck, 
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  Plus
+} from 'lucide-react';
+import { cn } from '../../lib/utils';
+import { CoefficientDiffBanner } from './CoefficientDiffBanner';
+
+// TimeWeb DB Setup
+const db = {};
+const handleDbError = (e: any, op: any, path: string) => console.warn("Database error:", op, path, e);
+enum OperationType { LIST = "LIST", UPDATE = "UPDATE", GET = "GET", DELETE = "DELETE", WRITE = "WRITE", CREATE = "CREATE" }
+function collection(db: any, ...pathParts: string[]) {
+  return { path: pathParts.join('/') };
+}
+function doc(db: any, ...pathParts: string[]) {
+  return { path: pathParts.join('/') };
+}
+async function setDoc(docRef: any, data: any, options?: any) {
+  await fetch(`/api/db/doc/${docRef.path}`, {
+    method: options?.merge ? 'PATCH' : 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data })
+  });
+}
+async function updateDoc(docRef: any, data: any) {
+  await fetch(`/api/db/doc/${docRef.path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data })
+  });
+}
+async function addDoc(colRef: any, data: any) {
+  const id = Math.random().toString(36).substr(2, 9);
+  const path = `${colRef.path}/${id}`;
+  await fetch(`/api/db/doc/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data })
+  });
+  return { id, path, data };
+}
+const serverTimestamp = () => new Date().toISOString();
+
+interface Project {
+  id: string;
+  name: string;
+  data: any;
+  status?: 'draft' | 'sent' | 'transferred';
+  sketches?: string[];
+  specification?: any;
+  companyId?: string;
+  revisionComment?: string;
+}
+
+export const ProjectSpecificationModal = ({ 
+  project, 
+  isOpen, 
+  onClose, 
+  userRole,
+  companyId,
+  manufacturerId,
+  currentCoefficients
+}: { 
+  project: Project; 
+  isOpen: boolean; 
+  onClose: () => void;
+  userRole: string;
+  companyId: string;
+  manufacturerId?: string;
+  currentCoefficients?: any;
+}) => {
+  const [sketches, setSketches] = useState<string[]>(project.sketches || []);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showRevisionModal, setShowRevisionModal] = useState(false);
+  const [revisionComment, setRevisionComment] = useState("");
+  const [activeCoefficientsMode, setActiveCoefficientsMode] = useState<'saved' | 'current'>(
+    project.data?.pricingApplied === 'current' ? 'current' : 'saved'
+  );
+
+  if (!isOpen) return null;
+
+  const savedSnapshot = project.data?.coefficientsSnapshot || (project.data ? {
+    savedAt: (project as any).updatedAt || (project as any).createdAt || new Date().toISOString(),
+    coefficients: project.data?.coefficients,
+    resolvedCoefficients: project.data?.resolvedCoefficients || currentCoefficients,
+  } : undefined);
+
+  const handleReturnToRevision = async () => {
+    if (!revisionComment.trim()) {
+      setError("Пожалуйста, укажите причину возврата на доработку");
+      return;
+    }
+    
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await updateDoc(doc(db, 'companies', companyId, 'projects', project.id), {
+        status: 'draft',
+        revisionComment: revisionComment
+      });
+      onClose();
+    } catch (err) {
+      handleDbError(err, OperationType.UPDATE, `companies/${companyId}/projects/${project.id}`);
+      setError('Ошибка при возврате на доработку');
+    } finally {
+      setIsSubmitting(false);
+      setShowRevisionModal(false);
+    }
+  };
+
+  const handleAddSketch = () => {
+    // Mock sketch upload
+    const mockUrl = `https://picsum.photos/seed/${Math.random()}/800/600`;
+    setSketches(prev => [...prev, mockUrl]);
+  };
+
+  const handleRemoveSketch = (index: number) => {
+    setSketches(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleTransferToSupervisor = async () => {
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await updateDoc(doc(db, 'companies', companyId, 'projects', project.id), {
+        status: 'transferred',
+        transferredAt: serverTimestamp()
+      });
+      onClose();
+    } catch (err) {
+      handleDbError(err, OperationType.UPDATE, `companies/${companyId}/projects/${project.id}`);
+      setError('Ошибка при передаче руководителю');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSendProject = async () => {
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await updateDoc(doc(db, 'companies', companyId, 'projects', project.id), {
+        status: 'sent',
+        sketches: sketches,
+        specification: project.data, // In a real app, this would be a refined spec
+        sentAt: serverTimestamp()
+      });
+      onClose();
+    } catch (err) {
+      handleDbError(err, OperationType.UPDATE, `companies/${companyId}/projects/${project.id}`);
+      setError('Ошибка при отправке проекта');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleTransferToProduction = async () => {
+    if (!manufacturerId) {
+      setError('У вашей компании не выбрано производство в настройках');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const timestamp = new Date().toISOString();
+      // 1. Update status in source company
+      await updateDoc(doc(db, 'companies', companyId, 'projects', project.id), {
+        status: 'production_transferred',
+        transferredAt: timestamp,
+        targetManufacturerId: manufacturerId
+      });
+
+      // 2. Create project in production company with exact same ID
+      const transferredData = {
+        ...project,
+        name: `${project.name} (от ${(project as any).companyName || 'Салона'})`,
+        createdAt: timestamp,
+        createdBy: project.id,
+        createdByName: 'Система (Перенос)',
+        data: project.data,
+        status: 'pending',
+        isPartnerOrder: true,
+        sourceCompanyId: companyId,
+        sourceProjectId: project.id,
+        originalSalonId: companyId,
+        originalSalonName: (project as any).companyName || 'Салон-партнер',
+        targetManufacturerId: manufacturerId,
+        sketches: sketches,
+        specification: project.data
+      };
+
+      await setDoc(doc(db, 'companies', manufacturerId, 'projects', project.id), transferredData);
+      await setDoc(doc(db, 'companies', manufacturerId, 'partner_projects', project.id), transferredData);
+
+      // Also create a partner set so it displays in "Заказы партнеров" and "Проекты"
+      const setId = project.data?.setId || `set_${project.id}`;
+      const partnerSetData = {
+        id: setId,
+        name: project.name,
+        contractNumber: (project as any).contractNumber || project.data?.contractNumber || project.id.slice(0, 6),
+        projectIds: [project.id],
+        status: 'pending',
+        originalSalonId: companyId,
+        originalSalonName: (project as any).companyName || 'Салон-партнер',
+        targetManufacturerId: manufacturerId,
+        isPartnerOrder: true,
+        createdAt: timestamp,
+        totalPrice: (project as any).totalPrice || project.data?.totalPrice || 0
+      };
+      await setDoc(doc(db, 'companies', manufacturerId, 'partner_sets', setId), partnerSetData);
+      await setDoc(doc(db, 'companies', manufacturerId, 'sets', setId), partnerSetData);
+
+      // 3. Register in manufacturer's ERP orders queue
+      try {
+        await fetch(`/api/companies/${manufacturerId}/erp_orders/${setId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: setId,
+            orderNumber: partnerSetData.contractNumber,
+            clientName: (project as any).clientName || 'Заказчик',
+            projectName: project.name,
+            salonName: partnerSetData.originalSalonName,
+            originalSalonId: companyId,
+            sourceSetId: setId,
+            createdAt: timestamp.substring(0, 10),
+            deadlineDate: (project as any).deadlineDate || new Date(Date.now() + 10 * 86400000).toISOString().substring(0, 10),
+            currentStage: 'queue',
+            priority: 'high',
+            status: 'in_progress',
+            priceTotal: partnerSetData.totalPrice
+          })
+        });
+      } catch (_) {}
+
+      onClose();
+    } catch (err) {
+      handleDbError(err, OperationType.CREATE, `companies/${manufacturerId}/projects`);
+      setError('Ошибка при передаче проекта на производство');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="bg-white w-full max-w-4xl max-h-[90vh] rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col">
+        <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-200">
+              <FileText className="text-white w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-xl font-black text-gray-900">Спецификация проекта</h2>
+              <p className="text-xs text-gray-500">{project.name}</p>
+            </div>
+          </div>
+          <button 
+            onClick={onClose}
+            className="p-2 hover:bg-gray-200 rounded-full transition-colors"
+          >
+            <X className="w-6 h-6 text-gray-400" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-8 space-y-8">
+          {savedSnapshot && currentCoefficients && (
+            <CoefficientDiffBanner
+              savedSnapshot={savedSnapshot}
+              currentCoefficients={currentCoefficients}
+              activeMode={activeCoefficientsMode}
+              savedTotal={(project as any).totalPrice || 0}
+              currentTotal={(project as any).totalPrice || 0}
+              onApplyCurrentCoefficients={() => setActiveCoefficientsMode('current')}
+              onRevertSavedCoefficients={() => setActiveCoefficientsMode('saved')}
+            />
+          )}
+
+          {error && (
+            <div className="p-4 bg-red-50 border border-red-100 text-red-700 rounded-2xl flex items-center gap-3 text-sm">
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+              {error}
+            </div>
+          )}
+
+          {/* Specification Content */}
+          <section>
+            <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest mb-4">Детализация заказа</h3>
+            <div className="bg-gray-50 rounded-3xl border border-gray-100 p-6">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                <SpecItem label="Материал" value={project.data?.decor || 'Не указан'} />
+                <SpecItem label="Кромка" value={project.data?.edge || 'Не указана'} />
+                <SpecItem label="Фасады" value={project.data?.facades || 'Не указаны'} />
+                <SpecItem label="Фурнитура" value="Комплект метизов" />
+              </div>
+            </div>
+          </section>
+
+          {/* Sketches Section */}
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest">Эскизы и чертежи</h3>
+              {userRole !== 'admin' && project.status === 'draft' && (
+                <button 
+                  onClick={handleAddSketch}
+                  className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                >
+                  <Plus className="w-4 h-4" /> Добавить
+                </button>
+              )}
+            </div>
+            
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+              {sketches.map((url, index) => (
+                <div key={index} className="relative group aspect-square rounded-2xl overflow-hidden border border-gray-100 shadow-sm">
+                  <img src={url} alt={`Sketch ${index + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  {userRole !== 'admin' && project.status === 'draft' && (
+                    <button 
+                      onClick={() => handleRemoveSketch(index)}
+                      className="absolute top-2 right-2 p-1.5 bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+              {sketches.length === 0 && (
+                <div className="col-span-full py-12 border-2 border-dashed border-gray-200 rounded-3xl flex flex-col items-center justify-center text-gray-400">
+                  <ImageIcon className="w-10 h-10 mb-2 opacity-20" />
+                  <p className="text-sm font-medium">Эскизы не добавлены</p>
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+
+        <div className="p-6 border-t border-gray-100 bg-gray-50/50 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="text-sm text-gray-500">
+            Статус: <span className={cn(
+              "font-bold",
+              project.status === 'sent' ? "text-orange-600" :
+              project.status === 'transferred' ? "text-green-600" : "text-blue-600"
+            )}>
+              {project.status === 'sent' ? 'Оформлен' : 
+               project.status === 'transferred' ? 'Передан в производство' : 'Черновик'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <button 
+              onClick={onClose}
+              className="flex-1 sm:flex-none px-6 py-3 text-gray-600 font-bold hover:bg-gray-200 rounded-xl transition-all"
+            >
+              Закрыть
+            </button>
+            
+            {project.status === 'transferred' && userRole === 'supervisor' && (
+              <button 
+                onClick={() => setShowRevisionModal(true)}
+                className="flex-1 sm:flex-none px-8 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 shadow-lg shadow-red-200 transition-all flex items-center justify-center gap-2"
+              >
+                Вернуть на доработку
+              </button>
+            )}
+
+            {project.status === 'sent' && (
+              <button 
+                onClick={handleTransferToSupervisor}
+                disabled={isSubmitting}
+                className="flex-1 sm:flex-none px-8 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-2"
+              >
+                {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                Передать руководителю
+              </button>
+            )}
+
+            {(project.status === 'sent') && userRole === 'supervisor' && (
+              <button 
+                onClick={() => setShowRevisionModal(true)}
+                className="flex-1 sm:flex-none px-8 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 shadow-lg shadow-red-200 transition-all flex items-center justify-center gap-2"
+              >
+                Вернуть на доработку
+              </button>
+            )}
+
+            {userRole === 'manager' && project.status === 'draft' && (
+              <button 
+                onClick={handleSendProject}
+                disabled={isSubmitting}
+                className="flex-1 sm:flex-none px-8 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-2"
+              >
+                {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                Оформить проект
+              </button>
+            )}
+
+            {userRole === 'admin' && project.status === 'sent' && (
+              <button 
+                onClick={handleTransferToProduction}
+                disabled={isSubmitting}
+                className="flex-1 sm:flex-none px-8 py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 shadow-lg shadow-green-200 transition-all flex items-center justify-center gap-2"
+              >
+                {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Truck className="w-5 h-5" />}
+                Передать в производство
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+      
+      {showRevisionModal && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white p-6 rounded-3xl w-full max-w-sm shadow-2xl">
+            <h3 className="text-lg font-black text-gray-900 mb-4">Причина возврата на доработку</h3>
+            <textarea
+              className="w-full p-4 border border-gray-200 rounded-xl text-sm mb-4"
+              rows={4}
+              value={revisionComment}
+              onChange={(e) => setRevisionComment(e.target.value)}
+              placeholder="Введите комментарий для менеджера..."
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowRevisionModal(false)}
+                className="flex-1 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded-xl"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={handleReturnToRevision}
+                className="flex-1 py-2 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700"
+              >
+                Вернуть
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const SpecItem = ({ label, value }: { label: string, value: string }) => (
+  <div>
+    <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">{label}</label>
+    <p className="text-sm font-bold text-gray-900 truncate">{value}</p>
+  </div>
+);

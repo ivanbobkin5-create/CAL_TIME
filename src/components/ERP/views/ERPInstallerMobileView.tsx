@@ -1,0 +1,1516 @@
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { 
+  Wrench, 
+  Calendar, 
+  CheckCircle2, 
+  DollarSign, 
+  Clock, 
+  Phone, 
+  MapPin, 
+  FileText, 
+  ChevronRight, 
+  Check, 
+  AlertCircle, 
+  Navigation, 
+  User, 
+  Building2, 
+  Layers, 
+  ArrowRight,
+  X,
+  Sparkles,
+  ExternalLink,
+  ShieldCheck,
+  RefreshCw,
+  Info,
+  Coins,
+  FileSpreadsheet,
+  AlertTriangle,
+  Camera,
+  Play,
+  Bell,
+  BellRing,
+  Download,
+  Smartphone
+} from 'lucide-react';
+import { ERPEmployee, InstallationTask, InstallationActSettings, ERPCompanySettings } from '../types';
+import { ExtraWorksMobileModal } from '../components/ExtraWorksMobileModal';
+import { InstallationActViewModal } from '../components/InstallationActViewModal';
+import { InstallerPhotoUploader } from '../components/InstallerPhotoUploader';
+import { InstallerReclamationModal } from '../components/InstallerReclamationModal';
+import { calculateWarrantyDate } from '../utils/installationActUtils';
+
+interface ERPInstallerMobileViewProps {
+  installerId: string;
+  aliasOrId: string;
+  employees: ERPEmployee[];
+  tasks: InstallationTask[];
+  onUpdateTask: (task: InstallationTask) => void;
+  onBackToErp?: () => void;
+  actSettings?: InstallationActSettings;
+  companyName?: string;
+  settings?: ERPCompanySettings;
+}
+
+export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
+  installerId,
+  aliasOrId,
+  employees,
+  tasks,
+  onUpdateTask,
+  onBackToErp,
+  actSettings,
+  companyName = 'Мебельное производство',
+  settings
+}) => {
+  // Active Tab ('proposed' | 'active' | 'completed' | 'earnings' | 'schedule')
+  const [activeTab, setActiveTab] = useState<'proposed' | 'active' | 'completed' | 'earnings' | 'schedule'>('proposed');
+
+  // Modal State for Taking a Task (Agreeing Date & Time)
+  const [takeModalTask, setTakeModalTask] = useState<InstallationTask | null>(null);
+  const [agreeDate, setAgreeDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [agreeTime, setAgreeTime] = useState<string>('10:00');
+  const [agreeComment, setAgreeComment] = useState<string>('');
+
+  // Modal State for Extra Works & Act View
+  const [extraWorksModalTask, setExtraWorksModalTask] = useState<InstallationTask | null>(null);
+  const [actViewModalTask, setActViewModalTask] = useState<InstallationTask | null>(null);
+  const [reclamationModalTask, setReclamationModalTask] = useState<InstallationTask | null>(null);
+
+  // Modal State for Completing a Task
+  const [completeModalTask, setCompleteModalTask] = useState<InstallationTask | null>(null);
+  const [completeNotes, setCompleteNotes] = useState<string>('');
+  const [paymentReceived, setPaymentReceived] = useState<boolean>(false);
+
+  // Modal State for Drawing / Specification Viewing
+  const [viewDrawingTask, setViewDrawingTask] = useState<InstallationTask | null>(null);
+
+  // Find Installer Employee Profile
+  const installer = useMemo(() => {
+    return employees.find(e => e.id === installerId || e.badgeCode === installerId) || {
+      id: installerId,
+      name: 'Сборщик мебели',
+      role: 'Сборщик мебели',
+      productionRole: 'Сборщик мебели',
+      phone: '',
+      shiftType: '2/2'
+    } as ERPEmployee;
+  }, [employees, installerId]);
+
+  // Filter Tasks STRICTLY for this Installer (must be explicitly assigned to this installer)
+  const installerTasks = useMemo(() => {
+    if (!installerId) return [];
+
+    return tasks.filter(t => {
+      // 1. Strict ID matching
+      const isAssignedToThisInstaller = 
+        (t.installerEmployeeId && (t.installerEmployeeId === installer.id || t.installerEmployeeId === installerId)) ||
+        (t.additionalInstallerIds && Array.isArray(t.additionalInstallerIds) && (t.additionalInstallerIds.includes(installer.id) || t.additionalInstallerIds.includes(installerId)));
+
+      if (isAssignedToThisInstaller) return true;
+
+      // 2. If task is explicitly assigned to another installer ID, NEVER match by name
+      if (t.installerEmployeeId && t.installerEmployeeId !== installer.id && t.installerEmployeeId !== installerId) {
+        return false;
+      }
+
+      // 3. Fallback to name ONLY if installerEmployeeId was unassigned
+      const isAssignedByName = Boolean(
+        !t.installerEmployeeId &&
+        t.installerEmployeeName && installer.name && installer.name !== 'Сборщик мебели' && 
+        t.installerEmployeeName.trim().toLowerCase() === installer.name.trim().toLowerCase()
+      );
+
+      return isAssignedByName;
+    });
+  }, [tasks, installer, installerId]);
+
+  // Tab 1: Proposed Tasks (New or Scheduled without client agreement)
+  const proposedTasks = useMemo(() => {
+    return installerTasks.filter(t => 
+      t.status !== 'completed' && t.status !== 'cancelled' &&
+      !(t as any).agreedWithClient && t.status !== 'in_progress' &&
+      (t.status === 'new' || t.status === 'scheduled')
+    );
+  }, [installerTasks]);
+
+  // Tab 2: Active Tasks (In progress or agreed with client)
+  const activeTasks = useMemo(() => {
+    return installerTasks.filter(t => 
+      t.status !== 'completed' && t.status !== 'cancelled' &&
+      (t.status === 'in_progress' || (t as any).agreedWithClient === true || Boolean((t as any).agreedAt))
+    );
+  }, [installerTasks]);
+
+  // Tab 3: Completed Tasks
+  const completedTasks = useMemo(() => {
+    return installerTasks.filter(t => t.status === 'completed');
+  }, [installerTasks]);
+
+  // Financial Stats for Earnings Tab
+  const stats = useMemo(() => {
+    const currentMonthStr = new Date().toISOString().substring(0, 7); // YYYY-MM
+    
+    let totalEarnedMonth = 0;
+    let totalEarnedAll = 0;
+    let activePendingAmount = 0;
+
+    completedTasks.forEach(t => {
+      const price = (t.assemblyPrice || 0) + (t.extraWorksTotal || 0);
+      totalEarnedAll += price;
+      
+      const compDate = (t.completedDate || t.updatedAt || t.createdAt || '').substring(0, 7);
+      if (compDate === currentMonthStr || !compDate) {
+        totalEarnedMonth += price;
+      }
+    });
+
+    activeTasks.forEach(t => {
+      activePendingAmount += ((t.assemblyPrice || 0) + (t.extraWorksTotal || 0));
+    });
+
+    return {
+      totalEarnedMonth,
+      totalEarnedAll,
+      activePendingAmount,
+      completedCount: completedTasks.length,
+      activeCount: activeTasks.length
+    };
+  }, [completedTasks, activeTasks]);
+
+  // Notification & PWA Installation State & Banner Dismissal
+  const [isBannerDismissed, setIsBannerDismissed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('erp_installer_banner_dismissed') === 'true';
+    } catch (e) {
+      return false;
+    }
+  });
+
+  const handleDismissBanner = () => {
+    setIsBannerDismissed(true);
+    try {
+      localStorage.setItem('erp_installer_banner_dismissed', 'true');
+    } catch (e) {}
+  };
+
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission>(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      return Notification.permission;
+    }
+    return 'default';
+  });
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches ||
+      (window.navigator as any).standalone === true;
+    setIsStandalone(isStandaloneMode);
+
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    setIsIOS(/iphone|ipad|ipod/.test(userAgent));
+
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  // Request Push / Browser Notifications
+  const requestNotifPermission = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      alert('Ваш браузер не поддерживает push-уведомления.');
+      return;
+    }
+    try {
+      const res = await Notification.requestPermission();
+      setNotifPermission(res);
+      if (res === 'granted') {
+        sendNotification(
+          '🔔 Push-уведомления включены!',
+          'При поступлении новых монтажей вам придет уведомление прямо на экран смартфона.'
+        );
+      } else if (res === 'denied') {
+        alert('Разрешение на уведомления заблокировано в настройках браузера. Разрешите их в настройках сайта.');
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Helper to send browser/serviceWorker notification
+  const sendNotification = (title: string, body: string, taskUrl?: string) => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    if (Notification.permission === 'granted') {
+      if ('serviceWorker' in navigator && navigator.serviceWorker.ready) {
+        navigator.serviceWorker.ready.then((reg) => {
+          (reg as any).showNotification(title, {
+            body,
+            icon: '/pwa-192x192.png',
+            badge: '/pwa-192x192.png',
+            vibrate: [200, 100, 200, 100, 200],
+            tag: 'installation-task-proposed',
+            renotify: true,
+            data: { url: taskUrl || window.location.href }
+          } as any);
+        }).catch(() => {
+          new Notification(title, { body, icon: '/pwa-192x192.png' });
+        });
+      } else {
+        new Notification(title, { body, icon: '/pwa-192x192.png' });
+      }
+    }
+  };
+
+  // Track new proposed tasks and trigger notification
+  const knownProposedTaskIdsRef = useRef<Set<string> | null>(null);
+
+  useEffect(() => {
+    const currentIds = new Set(proposedTasks.map(t => t.id));
+
+    if (knownProposedTaskIdsRef.current === null) {
+      // First render: initialize known proposed task IDs without spamming
+      knownProposedTaskIdsRef.current = currentIds;
+    } else {
+      // Find tasks newly added/proposed to this installer
+      proposedTasks.forEach(task => {
+        if (!knownProposedTaskIdsRef.current?.has(task.id)) {
+          sendNotification(
+            `🔔 Предложен новый монтаж! (${task.orderNumber})`,
+            `Заказчик: ${task.clientName}${task.address ? `. Адрес: ${task.address}` : ''}. Нажмите, чтобы открыть заявку.`,
+            window.location.href
+          );
+        }
+      });
+      knownProposedTaskIdsRef.current = currentIds;
+    }
+  }, [proposedTasks]);
+
+  // Handle PWA Install
+  const handleInstallApp = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const choice = await deferredPrompt.userChoice;
+      if (choice.outcome === 'accepted') {
+        setIsStandalone(true);
+        setDeferredPrompt(null);
+      }
+    } else if (isIOS) {
+      setShowInstallGuide(true);
+    } else {
+      alert('Для установки приложения нажмите «Добавить на рабочий стол» или «Установить приложение» в меню вашего браузера.');
+    }
+  };
+
+  // Handle Starting Installation
+  const handleStartInstallation = (task: InstallationTask) => {
+    const updated: InstallationTask = {
+      ...task,
+      status: 'in_progress',
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    onUpdateTask(updated);
+  };
+
+  // Handle Taking Task into Work (Agreeing Date & Time)
+  const handleConfirmTakeInWork = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!takeModalTask) return;
+
+    const scheduledDateTime = `${agreeDate}T${agreeTime}`;
+
+    const updated: InstallationTask = {
+      ...takeModalTask,
+      status: 'in_progress',
+      scheduledDate: scheduledDateTime,
+      installerEmployeeId: installer.id,
+      installerEmployeeName: installer.name,
+      comment: agreeComment ? `${takeModalTask.comment ? takeModalTask.comment + '\n' : ''}Согласовано с клиентом: ${agreeComment}` : takeModalTask.comment,
+      ...({
+        agreedWithClient: true,
+        agreedAt: new Date().toISOString()
+      } as any)
+    };
+
+    onUpdateTask(updated);
+    setTakeModalTask(null);
+    setAgreeComment('');
+    setActiveTab('active');
+  };
+
+  // Handle Completing Task
+  const handleConfirmComplete = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!completeModalTask) return;
+
+    const updated: InstallationTask = {
+      ...completeModalTask,
+      status: 'completed',
+      completedDate: new Date().toISOString(),
+      paymentStatus: paymentReceived ? 'paid' : completeModalTask.paymentStatus,
+      comment: completeNotes ? `${completeModalTask.comment ? completeModalTask.comment + '\n' : ''}Завершено сборщиком: ${completeNotes}` : completeModalTask.comment
+    };
+
+    onUpdateTask(updated);
+    setCompleteModalTask(null);
+    setCompleteNotes('');
+    setActiveTab('completed');
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-100 font-sans text-slate-900 pb-20 select-none">
+      {/* Top Mobile Header */}
+      <div className="bg-slate-900 text-white p-4 shadow-md sticky top-0 z-30">
+        <div className="max-w-md mx-auto flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-cyan-600 text-white flex items-center justify-center font-black text-sm shadow-sm border border-cyan-400/30 shrink-0">
+              {(installer.name || 'С').substring(0, 2).toUpperCase()}
+            </div>
+
+            <div>
+              <div className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1">
+                <Wrench className="w-3 h-3" /> Личный кабинет сборщика
+              </div>
+              <h1 className="text-sm font-black truncate max-w-[200px]">
+                {installer.name}
+              </h1>
+            </div>
+          </div>
+
+          {onBackToErp && (
+            <button
+              onClick={onBackToErp}
+              className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold transition-colors cursor-pointer"
+            >
+              В систему ERP
+            </button>
+          )}
+        </div>
+
+        {/* Color Badge Tabs Bar (No horizontal scroll, compact colored cards) */}
+        <div className="max-w-md mx-auto mt-3 grid grid-cols-5 gap-1.5">
+          {/* Tab 1: Proposed */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('proposed')}
+            className={`flex flex-col items-center justify-center py-2 px-1 rounded-2xl border transition-all cursor-pointer relative ${
+              activeTab === 'proposed'
+                ? 'bg-amber-500 text-slate-950 border-amber-300 font-black shadow-md shadow-amber-500/20 scale-[1.02]'
+                : 'bg-amber-950/40 text-amber-300 border-amber-500/30 hover:bg-amber-900/50'
+            }`}
+          >
+            <div className="flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5 shrink-0" />
+              {proposedTasks.length > 0 && (
+                <span className={`px-1.5 py-0.2 text-[9px] font-black rounded-full leading-none ${
+                  activeTab === 'proposed' ? 'bg-slate-950 text-amber-400' : 'bg-amber-500 text-slate-950'
+                }`}>
+                  {proposedTasks.length}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] font-extrabold leading-tight mt-1 truncate max-w-full text-center">
+              Заявки
+            </span>
+          </button>
+
+          {/* Tab 2: Active */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('active')}
+            className={`flex flex-col items-center justify-center py-2 px-1 rounded-2xl border transition-all cursor-pointer relative ${
+              activeTab === 'active'
+                ? 'bg-cyan-500 text-slate-950 border-cyan-300 font-black shadow-md shadow-cyan-500/20 scale-[1.02]'
+                : 'bg-cyan-950/40 text-cyan-300 border-cyan-500/30 hover:bg-cyan-900/50'
+            }`}
+          >
+            <div className="flex items-center gap-1">
+              <Wrench className="w-3.5 h-3.5 shrink-0" />
+              {activeTasks.length > 0 && (
+                <span className={`px-1.5 py-0.2 text-[9px] font-black rounded-full leading-none ${
+                  activeTab === 'active' ? 'bg-slate-950 text-cyan-400' : 'bg-cyan-400 text-slate-950'
+                }`}>
+                  {activeTasks.length}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] font-extrabold leading-tight mt-1 truncate max-w-full text-center">
+              В работе
+            </span>
+          </button>
+
+          {/* Tab 3: Completed */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('completed')}
+            className={`flex flex-col items-center justify-center py-2 px-1 rounded-2xl border transition-all cursor-pointer relative ${
+              activeTab === 'completed'
+                ? 'bg-emerald-500 text-slate-950 border-emerald-300 font-black shadow-md shadow-emerald-500/20 scale-[1.02]'
+                : 'bg-emerald-950/40 text-emerald-300 border-emerald-500/30 hover:bg-emerald-900/50'
+            }`}
+          >
+            <div className="flex items-center gap-1">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+              {completedTasks.length > 0 && (
+                <span className={`px-1.5 py-0.2 text-[9px] font-black rounded-full leading-none ${
+                  activeTab === 'completed' ? 'bg-slate-950 text-emerald-400' : 'bg-emerald-500 text-slate-950'
+                }`}>
+                  {completedTasks.length}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] font-extrabold leading-tight mt-1 truncate max-w-full text-center">
+              Сдано
+            </span>
+          </button>
+
+          {/* Tab 4: Earnings */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('earnings')}
+            className={`flex flex-col items-center justify-center py-2 px-1 rounded-2xl border transition-all cursor-pointer relative ${
+              activeTab === 'earnings'
+                ? 'bg-purple-500 text-slate-950 border-purple-300 font-black shadow-md shadow-purple-500/20 scale-[1.02]'
+                : 'bg-purple-950/40 text-purple-300 border-purple-500/30 hover:bg-purple-900/50'
+            }`}
+          >
+            <Coins className="w-3.5 h-3.5 shrink-0" />
+            <span className="text-[10px] font-extrabold leading-tight mt-1 truncate max-w-full text-center">
+              Доход
+            </span>
+          </button>
+
+          {/* Tab 5: Schedule */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('schedule')}
+            className={`flex flex-col items-center justify-center py-2 px-1 rounded-2xl border transition-all cursor-pointer relative ${
+              activeTab === 'schedule'
+                ? 'bg-sky-500 text-slate-950 border-sky-300 font-black shadow-md shadow-sky-500/20 scale-[1.02]'
+                : 'bg-sky-950/40 text-sky-300 border-sky-500/30 hover:bg-sky-900/50'
+            }`}
+          >
+            <Calendar className="w-3.5 h-3.5 shrink-0" />
+            <span className="text-[10px] font-extrabold leading-tight mt-1 truncate max-w-full text-center">
+              График
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="max-w-md mx-auto p-4 space-y-4">
+
+        {/* PWA & Notification Prompt Banner */}
+        {!isBannerDismissed && (
+          <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-3xl p-4 shadow-lg border border-indigo-800/40 space-y-3 relative animate-fade-in">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2.5 flex-1 pr-6">
+                <div className="w-9 h-9 rounded-2xl bg-indigo-600/40 text-indigo-300 flex items-center justify-center shrink-0 border border-indigo-500/30">
+                  <BellRing className="w-5 h-5 text-indigo-400 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="font-black text-xs text-white flex items-center gap-1.5">
+                    <span>Уведомления о монтажах</span>
+                    {!isStandalone && (
+                      <span className="text-[9px] bg-indigo-500/30 text-indigo-300 px-1.5 py-0.5 rounded-md font-bold">
+                        PWA
+                      </span>
+                    )}
+                  </h3>
+                  <p className="text-[11px] text-slate-300 font-medium leading-tight mt-0.5">
+                    {notifPermission === 'granted'
+                      ? 'Push-уведомления включены. Вы получите оповещение при вызове на новые монтажи.'
+                      : 'Включите уведомления, чтобы получать вызовы на монтаж прямо на экран телефона.'}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleDismissBanner}
+                className="absolute top-3.5 right-3.5 p-1 rounded-xl bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                title="Скрыть инструкцию и уведомление"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-indigo-900/60">
+              {notifPermission !== 'granted' ? (
+                <button
+                  type="button"
+                  onClick={requestNotifPermission}
+                  className="flex-1 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs shadow-md shadow-indigo-600/30 flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Bell className="w-3.5 h-3.5" />
+                  <span>Включить уведомления</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => sendNotification('🔔 Проверка push-уведомлений', 'Уведомления отлично работают на вашем устройстве!')}
+                  className="py-1.5 px-3 rounded-xl bg-emerald-600/30 hover:bg-emerald-600/40 border border-emerald-500/40 text-emerald-300 font-extrabold text-[11px] flex items-center gap-1 cursor-pointer"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Проверить push</span>
+                </button>
+              )}
+
+              {!isStandalone && (
+                <button
+                  type="button"
+                  onClick={handleInstallApp}
+                  className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs flex items-center gap-1.5 cursor-pointer ml-auto"
+                >
+                  <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>На экран «Домой»</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 1: PROPOSED TASKS */}
+        {activeTab === 'proposed' && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-xs font-bold text-slate-600 px-1">
+              <span>Предложенные монтажи ({proposedTasks.length})</span>
+              <span className="text-[10px] text-amber-700 font-semibold bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">
+                Ознакомьтесь и согласуйте время
+              </span>
+            </div>
+
+            {proposedTasks.length === 0 ? (
+              <div className="bg-white rounded-3xl p-8 text-center border border-slate-200/80 space-y-2">
+                <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <h3 className="font-bold text-slate-800 text-sm">Новых предложений нет</h3>
+                <p className="text-xs text-slate-400 max-w-xs mx-auto">
+                  Все доступные заказы уже взяты в работу. Проверьте вкладку «Активные».
+                </p>
+              </div>
+            ) : (
+              proposedTasks.map(task => (
+                <div key={task.id} className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-3.5">
+                  <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 font-black text-[10px]">
+                          Заказ №{task.orderNumber}
+                        </span>
+                        {task.type === 'reclamation' && (
+                          <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold text-[10px]">
+                            ⚠️ Рекламация
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="font-black text-slate-900 text-base mt-1">
+                        {task.clientName}
+                      </h3>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <div className="text-[10px] text-slate-400 font-semibold uppercase">Оплата за монтаж</div>
+                      <div className="text-lg font-black text-cyan-800 font-mono">
+                        {(task.assemblyPrice || 0).toLocaleString('ru-RU')} ₽
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Task Key Info */}
+                  <div className="space-y-2 text-xs">
+                    {/* Address & Navigation */}
+                    <div className="flex items-start gap-2 text-slate-700 bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                      <MapPin className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-slate-900">{task.address || 'Адрес не указан'}</div>
+                        {(task.floor || task.hasElevator !== undefined) && (
+                          <div className="text-[11px] text-slate-500 mt-0.5">
+                            Этаж: {task.floor || '1'} | Лифт: {task.hasElevator ? 'Есть (грузовой)' : 'Нет'}
+                          </div>
+                        )}
+                      </div>
+                      {task.address && (
+                        <a
+                          href={`https://yandex.ru/maps/?text=${encodeURIComponent(task.address)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-2.5 py-1.5 rounded-xl bg-cyan-100 text-cyan-900 font-bold text-[10px] shrink-0 flex items-center gap-1 hover:bg-cyan-200 transition-colors"
+                        >
+                          <Navigation className="w-3 h-3 text-cyan-700" />
+                          <span>Карта</span>
+                        </a>
+                      )}
+                    </div>
+
+                    {/* Client Phone & Direct Call */}
+                    {task.clientPhone && (
+                      <div className="flex items-center justify-between gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                        <div className="flex items-center gap-2">
+                          <Phone className="w-4 h-4 text-emerald-600" />
+                          <span className="font-mono font-bold text-slate-900">{task.clientPhone}</span>
+                        </div>
+                        <a
+                          href={`tel:${task.clientPhone.replace(/[^0-9+]/g, '')}`}
+                          className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center gap-1 shadow-xs transition-colors"
+                        >
+                          <Phone className="w-3 h-3" />
+                          <span>Позвонить</span>
+                        </a>
+                      </div>
+                    )}
+
+                    {/* Drawing & Specification button */}
+                    <button
+                      onClick={() => setViewDrawingTask(task)}
+                      className="w-full py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <FileText className="w-4 h-4 text-cyan-600" />
+                      <span>Сборочный чертеж и детализация</span>
+                    </button>
+                  </div>
+
+                  {/* Main Actions: Take in Work */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    <button
+                      onClick={() => {
+                        const nowIso = new Date().toISOString();
+                        const updated: InstallationTask = {
+                          ...task,
+                          status: 'in_progress',
+                          agreedWithClient: true,
+                          agreedAt: nowIso,
+                          scheduledDate: task.scheduledDate || nowIso.split('T')[0],
+                          scheduledTime: task.scheduledTime || '10:00',
+                          updatedAt: nowIso
+                        };
+                        onUpdateTask(updated);
+                        setActiveTab('active');
+                      }}
+                      className="w-full py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Play className="w-4 h-4 fill-white" />
+                      <span>Принять в работу сразу</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setTakeModalTask(task);
+                        setAgreeDate(new Date().toISOString().split('T')[0]);
+                        setAgreeTime('10:00');
+                      }}
+                      className="w-full py-3 rounded-2xl bg-cyan-600 hover:bg-cyan-500 text-white font-black text-xs shadow-md shadow-cyan-600/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Calendar className="w-4 h-4" />
+                      <span>Согласовать дату и время</span>
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {/* TAB 2: ACTIVE TASKS */}
+        {activeTab === 'active' && (
+          <div className="space-y-3">
+            {/* Banner if there are pending proposed tasks */}
+            {proposedTasks.length > 0 && (
+              <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/15 to-orange-500/10 border-2 border-amber-300 rounded-3xl p-4 flex items-center justify-between gap-3 shadow-sm animate-fade-in">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-md shadow-amber-500/30 animate-pulse">
+                    {proposedTasks.length}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-black text-amber-950 truncate">
+                      {proposedTasks.length === 1 ? 'Вам назначен новый монтаж!' : `Вам назначено монтажей: ${proposedTasks.length}`}
+                    </div>
+                    <div className="text-[11px] text-amber-900 truncate">
+                      Заказ №{proposedTasks[0].orderNumber} ({proposedTasks[0].clientName}) ждет подтверждения
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setActiveTab('proposed')}
+                  className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-black shrink-0 transition-colors shadow-sm cursor-pointer flex items-center gap-1"
+                >
+                  <span>Открыть</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between text-xs font-bold text-slate-600 px-1">
+              <span>Активные монтажи ({activeTasks.length})</span>
+              <span className="text-[10px] text-cyan-800 font-bold bg-cyan-50 px-2 py-0.5 rounded-lg border border-cyan-200">
+                Время согласовано с клиентом
+              </span>
+            </div>
+
+            {activeTasks.length === 0 ? (
+              <div className="bg-white rounded-3xl p-8 text-center border border-slate-200/80 space-y-2">
+                <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+                  <Clock className="w-6 h-6" />
+                </div>
+                <h3 className="font-bold text-slate-800 text-sm">Активных монтажей пока нет</h3>
+                <p className="text-xs text-slate-400 max-w-xs mx-auto">
+                  Возьмите заказ из вкладки «Заявки», чтобы согласовать время с клиентом.
+                </p>
+                {proposedTasks.length > 0 && (
+                  <button
+                    onClick={() => setActiveTab('proposed')}
+                    className="mt-2 px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-all shadow-sm cursor-pointer"
+                  >
+                    Перейти к заявкам ({proposedTasks.length})
+                  </button>
+                )}
+              </div>
+            ) : (
+              activeTasks.map(task => {
+                const dateFormatted = task.scheduledDate 
+                  ? new Date(task.scheduledDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
+                  : 'Дата не указана';
+
+                return (
+                  <div key={task.id} className="bg-white rounded-3xl p-5 border-2 border-cyan-300 shadow-md space-y-3.5">
+                    {/* Header */}
+                    <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-0.5 rounded-full bg-cyan-100 text-cyan-900 font-black text-[10px]">
+                            Заказ №{task.orderNumber}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]">
+                            ✓ Время согласовано
+                          </span>
+                        </div>
+                        <h3 className="font-black text-slate-900 text-base mt-1">
+                          {task.clientName}
+                        </h3>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <div className="text-[10px] text-slate-400 font-semibold uppercase">Оплата</div>
+                        <div className="text-lg font-black text-cyan-800 font-mono">
+                          {(task.assemblyPrice || 0).toLocaleString('ru-RU')} ₽
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Agreed Appointment Banner */}
+                    <div className="p-3 bg-cyan-50 rounded-2xl border border-cyan-200 flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-cyan-600 text-white flex items-center justify-center font-bold shrink-0 shadow-xs">
+                        <Calendar className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-cyan-800 font-bold uppercase tracking-wider">Начало сборки:</div>
+                        <div className="text-xs font-black text-slate-900">
+                          {dateFormatted}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Details */}
+                    <div className="space-y-2 text-xs">
+                      {/* Address */}
+                      <div className="flex items-start gap-2 text-slate-700 bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                        <MapPin className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold text-slate-900">{task.address || 'Адрес не указан'}</div>
+                        </div>
+                        {task.address && (
+                          <a
+                            href={`https://yandex.ru/maps/?text=${encodeURIComponent(task.address)}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-2.5 py-1.5 rounded-xl bg-cyan-100 text-cyan-900 font-bold text-[10px] shrink-0 flex items-center gap-1 hover:bg-cyan-200 transition-colors"
+                          >
+                            <Navigation className="w-3 h-3 text-cyan-700" />
+                            <span>Карта</span>
+                          </a>
+                        )}
+                      </div>
+
+                      {/* Phone */}
+                      {task.clientPhone && (
+                        <div className="flex items-center justify-between gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                          <div className="flex items-center gap-2">
+                            <Phone className="w-4 h-4 text-emerald-600" />
+                            <span className="font-mono font-bold text-slate-900">{task.clientPhone}</span>
+                          </div>
+                          <a
+                            href={`tel:${task.clientPhone.replace(/[^0-9+]/g, '')}`}
+                            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center gap-1 shadow-xs transition-colors"
+                          >
+                            <Phone className="w-3 h-3" />
+                            <span>Позвонить</span>
+                          </a>
+                        </div>
+                      )}
+
+                      {/* Drawings */}
+                      <button
+                        onClick={() => setViewDrawingTask(task)}
+                        className="w-full py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                      >
+                        <FileText className="w-4 h-4 text-cyan-600" />
+                        <span>Сборочный чертеж и спецификация</span>
+                      </button>
+
+                      {/* Extra Works Mobile Button */}
+                      <button
+                        onClick={() => setExtraWorksModalTask(task)}
+                        className="w-full py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md shadow-amber-500/20 transition-all flex items-center justify-between px-4 cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Coins className="w-4 h-4 text-slate-950" />
+                          <span>Дополнительные работы</span>
+                        </div>
+                        <div className="bg-slate-950 text-amber-400 font-mono text-[11px] font-black px-2.5 py-0.5 rounded-xl">
+                          {task.extraWorksTotal ? `+${task.extraWorksTotal.toLocaleString('ru-RU')} ₽` : 'Прейскурант'}
+                        </div>
+                      </button>
+
+                      {/* Photo Attachment (Up to 10 photos) */}
+                      <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                        <InstallerPhotoUploader
+                          photos={task.photos || []}
+                          maxPhotos={10}
+                          title="Фотоотчет монтажа"
+                          orderNumber={task.orderNumber}
+                          photoStorageTarget={settings?.photoStorageTarget || 'yandex_disk'}
+                          yandexDiskToken={settings?.yandexDiskToken}
+                          yandexDiskRootFolder={settings?.yandexDiskRootFolder}
+                          bitrixWebhookUrl={settings?.activeWebhookUrl || settings?.bitrix24WebhookUrl}
+                          bitrixTaskId={task.bitrixTaskId}
+                          onPhotosChange={(newPhotos) => {
+                            const updatedTask: InstallationTask = {
+                              ...task,
+                              photos: newPhotos,
+                              updatedAt: new Date().toISOString()
+                            };
+                            onUpdateTask(updatedTask);
+                          }}
+                        />
+                      </div>
+
+                      {/* Reclamation Warning Flag if Submitted */}
+                      {task.hasPendingReclamationFlag && (
+                        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3 flex items-center gap-2.5 text-rose-900 text-xs font-bold">
+                          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                          <span>Сигнал о рекламации передан руководству ({task.reclamationSignal?.reason})</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Actions */}
+                    <div className="space-y-2 pt-1">
+                      {/* Status / Start Action */}
+                      {task.status !== 'in_progress' ? (
+                        <button
+                          type="button"
+                          onClick={() => handleStartInstallation(task)}
+                          className="w-full py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-black text-xs shadow-md shadow-blue-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                          <Play className="w-4 h-4 fill-white" />
+                          <span>▶ Начать монтаж (Статус в ERP: В процессе)</span>
+                        </button>
+                      ) : (
+                        <div className="p-3 bg-blue-50 border border-blue-200 rounded-2xl flex items-center justify-between text-blue-900">
+                          <div className="flex items-center gap-2 font-black text-xs">
+                            <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-ping" />
+                            <span>Статус в ERP: В процессе монтажа</span>
+                          </div>
+                          <span className="text-[10px] font-extrabold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-lg">
+                            Выполняется
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setTakeModalTask(task);
+                            if (task.scheduledDate) {
+                              const [d, t] = task.scheduledDate.split('T');
+                              setAgreeDate(d || new Date().toISOString().split('T')[0]);
+                              setAgreeTime(t || '10:00');
+                            }
+                          }}
+                          className="px-3 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors cursor-pointer shrink-0"
+                        >
+                          Перенести
+                        </button>
+
+                        <button
+                          onClick={() => setActViewModalTask(task)}
+                          className="flex-1 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <FileSpreadsheet className="w-4 h-4" />
+                          <span>Акт и Завершить</span>
+                        </button>
+                      </div>
+
+                      {/* Red "Создать рекламацию" Button */}
+                      <button
+                        onClick={() => setReclamationModalTask(task)}
+                        className="w-full py-2.5 rounded-2xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <AlertTriangle className="w-4 h-4 text-rose-600" />
+                        <span>Создать рекламацию (сигнал о браке)</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+
+        {/* TAB 3: COMPLETED TASKS */}
+        {activeTab === 'completed' && (
+          <div className="space-y-3">
+            <div className="text-xs font-bold text-slate-600 px-1">
+              Завершенные монтажи ({completedTasks.length})
+            </div>
+
+            {completedTasks.length === 0 ? (
+              <div className="bg-white rounded-3xl p-8 text-center border border-slate-200/80 space-y-2">
+                <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+                </div>
+                <h3 className="font-bold text-slate-800 text-sm">Завершенных монтажей нет</h3>
+                <p className="text-xs text-slate-400 max-w-xs mx-auto">
+                  После завершения активного монтажа история будет сохраняться здесь.
+                </p>
+              </div>
+            ) : (
+              completedTasks.map(task => (
+                <div key={task.id} className="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-xs space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-900 font-bold text-[10px]">
+                      Заказ №{task.orderNumber}
+                    </span>
+                    <span className="text-xs font-mono font-black text-emerald-800">
+                      +{((task.assemblyPrice || 0) + (task.extraWorksTotal || 0)).toLocaleString('ru-RU')} ₽
+                    </span>
+                  </div>
+
+                  <div className="font-bold text-slate-900 text-xs">
+                    {task.clientName} — <span className="text-slate-500 font-normal">{task.address}</span>
+                  </div>
+
+                  {task.completedDate && (
+                    <div className="text-[10px] text-slate-400 flex items-center justify-between">
+                      <span>Завершено: {new Date(task.completedDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                      {task.warrantyUntil && (
+                        <span className="text-emerald-700 font-bold">Гарантия до {task.warrantyUntil}</span>
+                      )}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => setActViewModalTask(task)}
+                    className="w-full py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Посмотреть Акт приема-передачи</span>
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {/* TAB 4: EARNINGS Dashboard */}
+        {activeTab === 'earnings' && (
+          <div className="space-y-4">
+            <div className="text-xs font-bold text-slate-600 px-1">
+              Финансовый отчет и доход
+            </div>
+
+            <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-3xl p-5 shadow-md space-y-4">
+              <div>
+                <div className="text-xs font-bold text-cyan-400 uppercase tracking-wider">
+                  Заработано за этот месяц:
+                </div>
+                <div className="text-2xl md:text-3xl font-black font-mono text-white mt-1">
+                  {stats.totalEarnedMonth.toLocaleString('ru-RU')} ₽
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-700/80 text-xs">
+                <div>
+                  <div className="text-[10px] text-slate-400 font-semibold">Всего за время:</div>
+                  <div className="font-mono font-black text-slate-100 text-sm mt-0.5">
+                    {stats.totalEarnedAll.toLocaleString('ru-RU')} ₽
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-[10px] text-cyan-300 font-semibold">Ожидается (В работе):</div>
+                  <div className="font-mono font-black text-cyan-200 text-sm mt-0.5">
+                    {stats.activePendingAmount.toLocaleString('ru-RU')} ₽
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-3xl p-5 border border-slate-200/80 space-y-3">
+              <h3 className="font-black text-slate-900 text-sm">Сводка выполненных работ</h3>
+              <div className="space-y-2 text-xs">
+                <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+                  <span className="text-slate-500">Завершенных заказов:</span>
+                  <span className="font-bold text-slate-900">{stats.completedCount}</span>
+                </div>
+                <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+                  <span className="text-slate-500">Заказов в работе:</span>
+                  <span className="font-bold text-cyan-800">{stats.activeCount}</span>
+                </div>
+                <div className="flex items-center justify-between py-1.5">
+                  <span className="text-slate-500">Ставка за смену / тариф:</span>
+                  <span className="font-bold text-indigo-600">{installer.rateType === 'piecework' ? 'Сдельная (% от заказа)' : `${installer.baseRate || 0} ₽`}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Detailed Completed Orders Earnings List */}
+            <div className="bg-white rounded-3xl p-5 border border-slate-200/80 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-black text-slate-900 text-sm flex items-center gap-1.5">
+                  <Coins className="w-4 h-4 text-emerald-600" />
+                  <span>Начисления по завершенным монтажам ({completedTasks.length})</span>
+                </h3>
+              </div>
+
+              {completedTasks.length === 0 ? (
+                <div className="text-center py-6 text-xs text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                  Завершенных монтажей пока нет. Завершите монтаж на вкладке «В работе», чтобы здесь появилась выплата.
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {completedTasks.map(task => {
+                    const price = task.assemblyPrice || 0;
+                    const extra = task.extraWorksTotal || 0;
+                    const totalTask = price + extra;
+                    const dateFormatted = task.completedDate 
+                      ? new Date(task.completedDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })
+                      : 'Недавно';
+
+                    return (
+                      <div key={task.id} className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/70 space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-900 font-mono font-bold text-[10px]">
+                                Заказ №{task.orderNumber}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-medium">
+                                {dateFormatted}
+                              </span>
+                            </div>
+                            <div className="font-bold text-slate-900 text-xs mt-1">
+                              {task.clientName}
+                            </div>
+                            {task.address && (
+                              <div className="text-[10px] text-slate-500 truncate max-w-xs mt-0.5">
+                                {task.address}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="text-right shrink-0">
+                            <div className="font-mono font-black text-emerald-600 text-sm">
+                              +{totalTask.toLocaleString('ru-RU')} ₽
+                            </div>
+                            {extra > 0 && (
+                              <div className="text-[9px] text-slate-400 font-medium">
+                                (монтаж {price.toLocaleString('ru-RU')} + доп. {extra.toLocaleString('ru-RU')})
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {totalTask === 0 && (
+                          <div className="text-[10px] text-amber-700 bg-amber-50 p-2 rounded-xl border border-amber-200 flex items-start gap-1">
+                            <Info className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                            <span>Стоимость монтажа в ERP для этого заказа была 0 ₽. Руководитель может указать ставку в карточке монтажа.</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 5: SCHEDULE */}
+        {activeTab === 'schedule' && (
+          <div className="space-y-4">
+            <div className="text-xs font-bold text-slate-600 px-1">
+              График смен и календаря сборщика
+            </div>
+
+            <div className="bg-white rounded-3xl p-5 border border-slate-200/80 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="font-black text-slate-900 text-sm">Ваш график работы</div>
+                <span className="px-2.5 py-1 rounded-xl bg-cyan-100 text-cyan-900 font-mono font-bold text-xs">
+                  {installer.shiftType || '2/2'}
+                </span>
+              </div>
+
+              <p className="text-xs text-slate-500">
+                Все согласованные заказы с датой автоматически бронируют выезд в вашем графике.
+              </p>
+
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                <div className="text-xs font-bold text-slate-800">Ближайшие запланированные выезды:</div>
+                {activeTasks.length === 0 ? (
+                  <div className="text-xs text-slate-400 italic">Свободные дни. Монтажи не забронированы.</div>
+                ) : (
+                  activeTasks.map(t => (
+                    <div key={t.id} className="flex items-center justify-between text-xs bg-white p-2.5 rounded-xl border border-slate-200">
+                      <div>
+                        <div className="font-bold text-slate-900">Заказ №{t.orderNumber}</div>
+                        <div className="text-[10px] text-slate-500">{t.address}</div>
+                      </div>
+                      <span className="font-mono font-bold text-cyan-800 text-[11px] shrink-0">
+                        {t.scheduledDate ? new Date(t.scheduledDate).toLocaleDateString('ru-RU') : 'Скоро'}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+      </div>
+
+      {/* MODAL: TAKE IN WORK (AGREE DATE & TIME) */}
+      {takeModalTask && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in">
+          <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <span className="text-[10px] font-bold text-cyan-600 uppercase">Согласование времени</span>
+                <h3 className="font-black text-slate-900 text-base">
+                  Взять в работу Заказ №{takeModalTask.orderNumber}
+                </h3>
+              </div>
+
+              <button
+                onClick={() => setTakeModalTask(null)}
+                className="p-1.5 rounded-xl bg-slate-100 text-slate-500 hover:text-slate-800 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmTakeInWork} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Дата начала монтажа *
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={agreeDate}
+                  onChange={(e) => setAgreeDate(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-slate-900 text-xs focus:ring-2 focus:ring-cyan-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Время прибытия к клиенту *
+                </label>
+                <input
+                  type="time"
+                  required
+                  value={agreeTime}
+                  onChange={(e) => setAgreeTime(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-slate-900 text-xs focus:ring-2 focus:ring-cyan-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Примечание / Согласованные условия (опционально)
+                </label>
+                <textarea
+                  value={agreeComment}
+                  onChange={(e) => setAgreeComment(e.target.value)}
+                  placeholder="например: Договорились на утреннее время, парковка во дворе по звонку..."
+                  rows={2}
+                  className="w-full px-3.5 py-2 rounded-2xl bg-slate-50 border border-slate-200 font-medium text-slate-900 text-xs focus:ring-2 focus:ring-cyan-500 outline-none resize-none"
+                />
+              </div>
+
+              <div className="p-3 bg-cyan-50 rounded-2xl border border-cyan-200 text-[11px] text-cyan-900 font-medium">
+                💡 После нажатия дата и время мгновенно обновятся в основной ERP-системе цеха в разделе «Монтаж и сборка».
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3.5 rounded-2xl bg-cyan-600 hover:bg-cyan-500 text-white font-black text-xs shadow-md shadow-cyan-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>Подтвердить и перевести в Активные</span>
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: COMPLETE TASK */}
+      {completeModalTask && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in">
+          <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <span className="text-[10px] font-bold text-emerald-600 uppercase">Завершение монтажа</span>
+                <h3 className="font-black text-slate-900 text-base">
+                  Заказ №{completeModalTask.orderNumber}
+                </h3>
+              </div>
+
+              <button
+                onClick={() => setCompleteModalTask(null)}
+                className="p-1.5 rounded-xl bg-slate-100 text-slate-500 hover:text-slate-800 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmComplete} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Комментарий к завершению
+                </label>
+                <textarea
+                  value={completeNotes}
+                  onChange={(e) => setCompleteNotes(e.target.value)}
+                  placeholder="Сборка выполнена полностью, клиент принял работу без замечаний..."
+                  rows={3}
+                  className="w-full px-3.5 py-2 rounded-2xl bg-slate-50 border border-slate-200 font-medium text-slate-900 text-xs focus:ring-2 focus:ring-cyan-500 outline-none resize-none"
+                />
+              </div>
+
+              <label className="flex items-center gap-2.5 p-3 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer hover:bg-slate-100 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={paymentReceived}
+                  onChange={(e) => setPaymentReceived(e.target.checked)}
+                  className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
+                />
+                <span className="font-bold text-slate-800 text-xs">
+                  Оплата от клиента получен на месте
+                </span>
+              </label>
+
+              <button
+                type="submit"
+                className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>Завершить монтаж</span>
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: DRAWING & SPECIFICATION VIEWER */}
+      {viewDrawingTask && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white w-full max-w-lg rounded-3xl p-6 space-y-4 shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <span className="text-[10px] font-bold text-cyan-600 uppercase">Сборочный чертеж</span>
+                <h3 className="font-black text-slate-900 text-base">
+                  Заказ №{viewDrawingTask.orderNumber} ({viewDrawingTask.clientName})
+                </h3>
+              </div>
+
+              <button
+                onClick={() => setViewDrawingTask(null)}
+                className="p-1.5 rounded-xl bg-slate-100 text-slate-500 hover:text-slate-800 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-center space-y-2">
+                <FileText className="w-8 h-8 text-cyan-600 mx-auto" />
+                <div className="font-bold text-slate-800">
+                  Сборочный чертеж и комплектовочная карта
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Документы прикреплены к заказу №{viewDrawingTask.orderNumber}.
+                </p>
+                <a
+                  href={`#drawing-${viewDrawingTask.orderNumber}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    alert(`Чертежи заказа №${viewDrawingTask.orderNumber} загружаются из файлового хранилища.`);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-cyan-600 text-white font-bold text-xs shadow-xs hover:bg-cyan-500 transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Открыть полный PDF чертеж</span>
+                </a>
+              </div>
+
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-1.5">
+                <div className="font-bold text-slate-900">Детали адреса и заказа:</div>
+                <div className="text-slate-600">Адрес: {viewDrawingTask.address || '—'}</div>
+                <div className="text-slate-600">Количество коробок: {viewDrawingTask.packagesCount || '1'}</div>
+                <div className="text-slate-600">Стоимость монтажа: {viewDrawingTask.assemblyPrice || 0} ₽</div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setViewDrawingTask(null)}
+              className="w-full py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition-colors cursor-pointer"
+            >
+              Закрыть
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: EXTRA WORKS MOBILE SELECTOR */}
+      {extraWorksModalTask && (
+        <ExtraWorksMobileModal
+          isOpen={!!extraWorksModalTask}
+          onClose={() => setExtraWorksModalTask(null)}
+          task={extraWorksModalTask}
+          actSettings={actSettings}
+          onUpdateTask={(updated) => {
+            onUpdateTask(updated);
+            setExtraWorksModalTask(updated);
+          }}
+        />
+      )}
+
+      {/* MODAL: INSTALLATION ACT & COMPLETION */}
+      {actViewModalTask && (
+        <InstallationActViewModal
+          isOpen={!!actViewModalTask}
+          onClose={() => setActViewModalTask(null)}
+          task={actViewModalTask}
+          actSettings={actSettings}
+          companyName={companyName}
+          isReadOnly={actViewModalTask.status === 'completed'}
+          onConfirmComplete={(notes, paymentReceived) => {
+            const completedDate = new Date().toISOString().split('T')[0];
+            const warrantyYears = actSettings?.warrantyYears || 2;
+            const warrantyUntilFormatted = calculateWarrantyDate(completedDate, warrantyYears);
+
+            const assemblyPrice = actViewModalTask.assemblyPrice || 0;
+            const extraWorksTotal = actViewModalTask.extraWorksTotal || 0;
+            const grandTotal = assemblyPrice + extraWorksTotal;
+
+            const completionComment = `Монтаж завершен. Оплата ${paymentReceived ? 'получена в полном объеме' : 'ожидает подтверждения'}. Выполнено доп. работ на ${extraWorksTotal.toLocaleString('ru-RU')} ₽. Итоговая сумма: ${grandTotal.toLocaleString('ru-RU')} ₽. Гарантия действует до ${warrantyUntilFormatted}.${notes ? '\nКомментарий: ' + notes : ''}`;
+
+            const updated: InstallationTask = {
+              ...actViewModalTask,
+              status: 'completed',
+              completedDate,
+              warrantyUntil: warrantyUntilFormatted,
+              paymentStatus: paymentReceived ? 'paid' : actViewModalTask.paymentStatus,
+              comment: actViewModalTask.comment ? `${actViewModalTask.comment}\n${completionComment}` : completionComment,
+              updatedAt: new Date().toISOString()
+            };
+
+            onUpdateTask(updated);
+            setActViewModalTask(null);
+          }}
+        />
+      )}
+
+      {/* MODAL: RECLAMATION SIGNAL MODAL */}
+      {reclamationModalTask && (
+        <InstallerReclamationModal
+          isOpen={!!reclamationModalTask}
+          onClose={() => setReclamationModalTask(null)}
+          task={reclamationModalTask}
+          photoStorageTarget={settings?.photoStorageTarget || 'yandex_disk'}
+          yandexDiskToken={settings?.yandexDiskToken}
+          yandexDiskRootFolder={settings?.yandexDiskRootFolder}
+          bitrixWebhookUrl={settings?.activeWebhookUrl || settings?.bitrix24WebhookUrl}
+          onSubmitReclamationSignal={(reason, details, photos) => {
+            const updated: InstallationTask = {
+              ...reclamationModalTask,
+              hasPendingReclamationFlag: true,
+              reclamationSignal: {
+                reason,
+                details,
+                photos,
+                createdAt: new Date().toISOString(),
+                status: 'pending'
+              },
+              updatedAt: new Date().toISOString()
+            };
+            onUpdateTask(updated);
+            alert('Сигнальный запрос о рекламации успешно передан мастеру производства.');
+            setReclamationModalTask(null);
+          }}
+        />
+      )}
+
+      {/* iOS Installation Guide Modal */}
+      {showInstallGuide && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Smartphone className="w-5 h-5 text-indigo-600" />
+                <h3 className="font-black text-slate-900 text-sm">Установка на iPhone / iPad</h3>
+              </div>
+              <button
+                onClick={() => setShowInstallGuide(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-slate-700">
+              <p className="font-medium">
+                Чтобы получать push-уведомления и открывать приложение в 1 клик с рабочего стола:
+              </p>
+              <ol className="space-y-2 list-decimal list-inside font-semibold text-slate-800 bg-slate-50 p-3 rounded-2xl border border-slate-200/80">
+                <li>Нажмите кнопку <span className="inline-block px-1.5 py-0.5 bg-slate-200 rounded font-bold">Поделиться</span> внизу браузера Safari.</li>
+                <li>Прокрутите вниз и нажмите <span className="inline-block px-1.5 py-0.5 bg-slate-200 rounded font-bold">«На экран «Домой»»</span>.</li>
+                <li>Нажмите <span className="inline-block px-1.5 py-0.5 bg-indigo-100 text-indigo-800 rounded font-bold">Добавить</span>.</li>
+              </ol>
+            </div>
+
+            <button
+              onClick={() => setShowInstallGuide(false)}
+              className="w-full py-2.5 rounded-2xl bg-indigo-600 text-white font-bold text-xs shadow-md cursor-pointer"
+            >
+              Понятно
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

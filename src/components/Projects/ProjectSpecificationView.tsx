@@ -1,0 +1,648 @@
+import React, { useState } from 'react';
+import { 
+  X, 
+  FileText, 
+  Image as ImageIcon, 
+  Upload, 
+  Send, 
+  Truck, 
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  Plus,
+  Package
+} from 'lucide-react';
+// TimeWeb DB Setup
+const db = {};
+const handleDbError = (e: any, op: any, path: string) => console.warn("Database error:", op, path, e);
+enum OperationType { LIST = "LIST", UPDATE = "UPDATE", GET = "GET", DELETE = "DELETE", WRITE = "WRITE", CREATE = "CREATE" }
+function doc(db: any, ...pathParts: string[]) {
+  return { path: pathParts.join('/') };
+}
+async function updateDoc(docRef: any, data: any) {
+  await fetch(`/api/db/doc/${docRef.path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data })
+  });
+}
+async function setDoc(docRef: any, data: any) {
+  await fetch(`/api/db/doc/${docRef.path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data })
+  });
+}
+async function addDoc(colRef: any, data: any) {
+  const id = Math.random().toString(36).substr(2, 9);
+  const path = `${colRef.path}/${id}`;
+  await fetch(`/api/db/doc/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data })
+  });
+  return { id, path, data };
+}
+function collection(db: any, ...pathParts: string[]) {
+  return { path: pathParts.join('/') };
+}
+const serverTimestamp = () => new Date().toISOString();
+import { cn } from '../../lib/utils';
+import { SketchAnnotator } from './SketchAnnotator';
+import { CoefficientDiffBanner, normalizeCoefficients } from './CoefficientDiffBanner';
+
+
+interface Project {
+  id: string;
+  name: string;
+  data: any;
+  status?: 'draft' | 'sent' | 'transferred';
+  sketches?: string[];
+  specification?: any;
+  companyId?: string;
+  totalPrice?: number;
+  sentAt?: string;
+  readyDate?: string;
+}
+
+export const ProjectSpecificationView = ({ 
+  project, 
+  onClose, 
+  onPrint,
+  onPrintProposal,
+  userRole,
+  companyId,
+  manufacturerId,
+  upsertEdgeToPriceList,
+  currentCoefficients
+}: { 
+  project: Project; 
+  onClose: () => void;
+  onPrint?: (project: Project) => void;
+  onPrintProposal?: (project: Project) => void;
+  userRole: string;
+  companyId: string;
+  manufacturerId?: string;
+  upsertEdgeToPriceList?: (decor: string, thickness: string, price: number, brandLdsp: string) => Promise<void>;
+  currentCoefficients?: any;
+}) => {
+  const [sketches, setSketches] = useState<string[]>(project.sketches || []);
+  const [selectedSketch, setSelectedSketch] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Coefficient mode tracking for this project
+  const [activeCoefficientsMode, setActiveCoefficientsMode] = useState<'saved' | 'current'>(
+    project.data?.pricingApplied === 'current' ? 'current' : 'saved'
+  );
+  const [localTotalPrice, setLocalTotalPrice] = useState<number>(project.totalPrice || 0);
+
+  // Derive saved snapshot or fallback
+  const savedSnapshot = project.data?.coefficientsSnapshot || (project.data ? {
+    savedAt: (project as any).updatedAt || (project as any).createdAt || new Date().toISOString(),
+    coefficients: project.data?.coefficients,
+    resolvedCoefficients: project.data?.resolvedCoefficients || currentCoefficients,
+  } : undefined);
+
+  // Calculate alternative price under new coefficients if available
+  const getCatCoeff = (coeffs: any, cat: string, defaultVal: number = 1) => {
+    if (!coeffs) return defaultVal;
+    const norm = normalizeCoefficients(coeffs);
+    if (cat && norm.products?.[cat] !== undefined) return norm.products[cat];
+    if (cat === "Посудосушитель" && norm.products?.["Посудосушители"] !== undefined) return norm.products["Посудосушители"];
+    if (cat === "Посудосушители" && norm.products?.["Посудосушитель"] !== undefined) return norm.products["Посудосушитель"];
+    if (cat && coeffs[cat] !== undefined) return coeffs[cat];
+    if (cat && coeffs[`cat_${cat}`] !== undefined) return coeffs[`cat_${cat}`];
+    return coeffs.hardware || defaultVal;
+  };
+
+  const recalculateTotal = (rows: any[], targetCoeffs: any, sourceCoeffs: any): number => {
+    if (!rows || !targetCoeffs) return project.totalPrice || 0;
+    const tgtNorm = normalizeCoefficients(targetCoeffs);
+    const srcNorm = normalizeCoefficients(sourceCoeffs);
+    let sum = 0;
+    rows.forEach((row) => {
+      let srcCoef = row.coef || 1;
+      let tgtCoef = 1;
+
+      const rowName = (row.name || '').toUpperCase();
+      const rowSub = (row.sub || '').toUpperCase();
+
+      if (row.type === 'material') {
+        if (rowName.includes('ХДФ') || rowName.includes('ДВП') || rowSub.includes('ХДФ') || rowSub.includes('ДВП') || rowSub.includes('ЗАДНЯЯ')) {
+          tgtCoef = tgtNorm.hdf ?? targetCoeffs.hdf ?? 1;
+          srcCoef = srcNorm.hdf ?? sourceCoeffs?.hdf ?? row.coef ?? 1;
+        } else if (rowName.includes('МЕТИЗ') || rowSub.includes('МЕТИЗ')) {
+          tgtCoef = tgtNorm.hardware ?? targetCoeffs.hardware ?? 1;
+          srcCoef = srcNorm.hardware ?? sourceCoeffs?.hardware ?? row.coef ?? 1;
+        } else {
+          tgtCoef = tgtNorm.ldsp ?? targetCoeffs.ldsp ?? 1;
+          srcCoef = srcNorm.ldsp ?? sourceCoeffs?.ldsp ?? row.coef ?? 1;
+        }
+      } else if (row.type === 'edge' || row.type === 'product_edge') {
+        tgtCoef = tgtNorm.edge ?? targetCoeffs.edge ?? 1;
+        srcCoef = srcNorm.edge ?? sourceCoeffs?.edge ?? row.coef ?? 1;
+      } else if (row.type === 'hardware' || row.type === 'product') {
+        const cat = row.category || row.rawProduct?.category || row.sub;
+        tgtCoef = getCatCoeff(targetCoeffs, cat, tgtNorm.hardware || targetCoeffs.hardware || 1);
+        srcCoef = getCatCoeff(sourceCoeffs, cat, row.coef || srcNorm.hardware || sourceCoeffs?.hardware || 1);
+      } else if (row.type === 'facade') {
+        const isSheet = row.facadeType === 'sheet' || rowName.includes('ПЛИТН') || rowSub.includes('ПЛИТН');
+        tgtCoef = isSheet ? (tgtNorm.facadeSheet ?? targetCoeffs.facadeSheet ?? 1) : (tgtNorm.facadeCustom ?? targetCoeffs.facadeCustom ?? 1);
+        srcCoef = isSheet ? (srcNorm.facadeSheet ?? sourceCoeffs?.facadeSheet ?? row.coef ?? 1) : (srcNorm.facadeCustom ?? sourceCoeffs?.facadeCustom ?? row.coef ?? 1);
+      } else if (row.type === 'service') {
+        tgtCoef = tgtNorm.services ?? targetCoeffs.services ?? 1;
+        srcCoef = srcNorm.services ?? sourceCoeffs?.services ?? row.coef ?? 1;
+      } else {
+        tgtCoef = row.coef || 1;
+        srcCoef = row.coef || 1;
+      }
+
+      if (srcCoef > 0 && tgtCoef > 0 && Math.abs(tgtCoef - srcCoef) > 0.001) {
+        sum += Math.round((row.total || 0) * (tgtCoef / srcCoef));
+      } else {
+        sum += (row.total || 0);
+      }
+    });
+    return sum > 0 ? sum : (project.totalPrice || 0);
+  };
+
+  const summaryRows = project.data?.summaryRows || [];
+  const sourceCoeffs = savedSnapshot?.resolvedCoefficients || savedSnapshot?.coefficients || currentCoefficients;
+  
+  const savedTotalAmount = project.totalPrice || 0;
+  const currentTotalAmount = currentCoefficients && sourceCoeffs
+    ? recalculateTotal(summaryRows, currentCoefficients, sourceCoeffs)
+    : savedTotalAmount;
+
+  const handleApplyCurrentCoefficients = async () => {
+    if (!companyId || !project.id) return;
+    setIsSubmitting(true);
+    try {
+      const updatedTotal = currentTotalAmount;
+      setActiveCoefficientsMode('current');
+      setLocalTotalPrice(updatedTotal);
+
+      await updateDoc(doc(db, 'companies', companyId, 'projects', project.id), {
+        totalPrice: updatedTotal,
+        'data.pricingApplied': 'current',
+        'data.coefficientsSnapshot': {
+          savedAt: new Date().toISOString(),
+          coefficients: currentCoefficients,
+          resolvedCoefficients: currentCoefficients,
+          previousSnapshot: savedSnapshot
+        }
+      });
+    } catch (e) {
+      console.error('Error applying current coefficients:', e);
+      setError('Ошибка при перерасчете проекта по новым коэффициентам');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRevertSavedCoefficients = async () => {
+    if (!companyId || !project.id) return;
+    setIsSubmitting(true);
+    try {
+      const originalSnapshot = project.data?.coefficientsSnapshot?.previousSnapshot || savedSnapshot;
+      setActiveCoefficientsMode('saved');
+      setLocalTotalPrice(savedTotalAmount);
+
+      await updateDoc(doc(db, 'companies', companyId, 'projects', project.id), {
+        totalPrice: savedTotalAmount,
+        'data.pricingApplied': 'saved',
+        'data.coefficientsSnapshot': originalSnapshot
+      });
+    } catch (e) {
+      console.error('Error reverting saved coefficients:', e);
+      setError('Ошибка при возврате к исходным коэффициентам');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRemoveSketch = (index: number) => {
+    setSketches(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleTransferAnnotatedSketch = (annotatedImageUrl: string) => {
+    setSketches(prev => prev.map(s => s === selectedSketch ? annotatedImageUrl : s));
+    setSelectedSketch(null);
+  };
+
+  const handleTransferToSupervisor = async () => {
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await updateDoc(doc(db, 'companies', companyId, 'projects', project.id), {
+        status: 'transferred',
+        transferredAt: serverTimestamp()
+      });
+      onClose();
+    } catch (err) {
+      handleDbError(err, OperationType.UPDATE, `companies/${companyId}/projects/${project.id}`);
+      setError('Ошибка при передаче руководителю');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSendProject = () => {
+    setIsSubmitting(true);
+    setError(null);
+    
+    const updateData: any = {
+      status: 'sent',
+      sketches: sketches,
+      sentAt: serverTimestamp()
+    };
+    if (project.data) {
+      updateData.specification = project.data;
+    }
+
+    // Не ждем ответа (await), чтобы мгновенно сработал UI даже при слабой сети
+    updateDoc(doc(db, 'companies', companyId, 'projects', project.id), updateData)
+      .catch((err) => {
+        console.error('Ошибка фонового обновления:', err);
+      });
+      
+    // Немедленно закрываем окно, слушатель onSnapshot обновит UI
+    onClose();
+    setIsSubmitting(false);
+  };
+
+  const handleTransferToProduction = async () => {
+    if (!manufacturerId) {
+      setError('У вашей компании не выбрано производство в настройках');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const timestamp = new Date().toISOString();
+      // 1. Update status in source company
+      await updateDoc(doc(db, 'companies', companyId, 'projects', project.id), {
+        status: 'production_transferred',
+        transferredAt: timestamp,
+        targetManufacturerId: manufacturerId
+      });
+
+      // 2. Create project in production company with exact same ID
+      const transferredData = {
+        ...project,
+        name: `${project.name} (от ${(project as any).companyName || 'Салона'})`,
+        createdAt: timestamp,
+        createdBy: project.id,
+        createdByName: 'Система (Перенос)',
+        data: project.data,
+        status: 'pending',
+        isPartnerOrder: true,
+        sourceCompanyId: companyId,
+        sourceProjectId: project.id,
+        originalSalonId: companyId,
+        originalSalonName: (project as any).companyName || 'Салон-партнер',
+        targetManufacturerId: manufacturerId,
+        sketches: sketches,
+        specification: project.data
+      };
+
+      await setDoc(doc(db, 'companies', manufacturerId, 'projects', project.id), transferredData);
+      await setDoc(doc(db, 'companies', manufacturerId, 'partner_projects', project.id), transferredData);
+
+      // Also create a partner set so it displays in "Заказы партнеров" and "Проекты"
+      const setId = project.data?.setId || `set_${project.id}`;
+      const partnerSetData = {
+        id: setId,
+        name: project.name,
+        contractNumber: (project as any).contractNumber || project.data?.contractNumber || project.id.slice(0, 6),
+        projectIds: [project.id],
+        status: 'pending',
+        originalSalonId: companyId,
+        originalSalonName: (project as any).companyName || 'Салон-партнер',
+        targetManufacturerId: manufacturerId,
+        isPartnerOrder: true,
+        createdAt: timestamp,
+        totalPrice: (project as any).totalPrice || project.data?.totalPrice || 0
+      };
+      await setDoc(doc(db, 'companies', manufacturerId, 'partner_sets', setId), partnerSetData);
+      await setDoc(doc(db, 'companies', manufacturerId, 'sets', setId), partnerSetData);
+
+      // 3. Register in manufacturer's ERP orders queue
+      try {
+        await fetch(`/api/companies/${manufacturerId}/erp_orders/${setId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: setId,
+            orderNumber: partnerSetData.contractNumber,
+            clientName: (project as any).clientName || 'Заказчик',
+            projectName: project.name,
+            salonName: partnerSetData.originalSalonName,
+            originalSalonId: companyId,
+            sourceSetId: setId,
+            createdAt: timestamp.substring(0, 10),
+            deadlineDate: (project as any).deadlineDate || new Date(Date.now() + 10 * 86400000).toISOString().substring(0, 10),
+            currentStage: 'queue',
+            priority: 'high',
+            status: 'in_progress',
+            priceTotal: partnerSetData.totalPrice
+          })
+        });
+      } catch (_) {}
+
+      onClose();
+    } catch (err) {
+      handleDbError(err, OperationType.CREATE, `companies/${manufacturerId}/projects`);
+      setError('Ошибка при передаче проекта на производство');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    console.log('File upload triggered', event.target.files);
+    const file = event.target.files?.[0];
+    if (file) {
+      console.log('File selected:', file.name, file.type);
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const url = e.target?.result as string;
+        setSketches(prev => [...prev, url]);
+      };
+      reader.readAsDataURL(file);
+      event.target.value = ''; // Reset input
+    } else {
+      console.log('No file selected');
+    }
+  };
+
+  return (
+    <div className="p-4 md:p-8 max-w-6xl mx-auto">
+      <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+        <div className="p-6 rounded-t-[2.5rem] border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-200">
+              <FileText className="text-white w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-xl font-black text-gray-900">Спецификация проекта</h2>
+              <p className="text-xs text-gray-500">{project.name}</p>
+            </div>
+          </div>
+          <button 
+            onClick={selectedSketch ? () => setSelectedSketch(null) : onClose}
+            className="p-2 hover:bg-gray-200 rounded-full transition-colors"
+          >
+            <X className="w-6 h-6 text-gray-400" />
+          </button>
+        </div>
+
+        {selectedSketch ? (
+          <div className="p-8">
+            <SketchAnnotator imageUrl={selectedSketch} onSave={handleTransferAnnotatedSketch} />
+          </div>
+        ) : (
+          <div className="p-8 space-y-8">
+            {error && (
+              <div className="p-4 bg-red-50 border border-red-100 text-red-700 rounded-2xl flex items-center gap-3 text-sm">
+                <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                {error}
+              </div>
+            )}
+
+            {/* Coefficient Difference Banner */}
+            {savedSnapshot && currentCoefficients && (
+              <CoefficientDiffBanner
+                savedSnapshot={savedSnapshot}
+                currentCoefficients={currentCoefficients}
+                activeMode={activeCoefficientsMode}
+                savedTotal={savedTotalAmount}
+                currentTotal={currentTotalAmount}
+                onApplyCurrentCoefficients={handleApplyCurrentCoefficients}
+                onRevertSavedCoefficients={handleRevertSavedCoefficients}
+              />
+            )}
+
+            {/* Materials, Edges and Facades Section (New Styled Format) */}
+            <section className="space-y-6">
+              <div className="bg-[#f0f7ff] rounded-[1.5rem] border border-[#e0eefc] p-6 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-4 bg-blue-600 rounded-full" />
+                    <h3 className="text-sm font-bold text-[#003580]">Материалы, кромка и фасады</h3>
+                  </div>
+                  {localTotalPrice > 0 && (
+                    <div className="text-right">
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Итоговая сумма:</span>
+                      <span className="text-xl font-black text-blue-600">{localTotalPrice.toLocaleString()} ₽</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-6">
+                  {/* Группировка по проекту */}
+                  {Object.entries((() => {
+                    const materials: any[] = [];
+                    const data = project.data || {};
+                    const summary = data.summary || {};
+                    
+                    // Если есть предобработанные данные из заказа (Set)
+                    if (summary.materials) {
+                      materials.push(...summary.materials.map((m: any) => ({ ...m, type: m.type || 'material' })));
+                    }
+                    if (summary.hardware) {
+                      materials.push(...summary.hardware.map((h: any) => ({ ...h, type: 'hardware' })));
+                    }
+                    
+                    // Если нет предобработанных, берем из summaryRows (для одиночного проекта)
+                    if (materials.length === 0 && data.summaryRows) {
+                      materials.push(...data.summaryRows);
+                    }
+
+                    return materials.reduce((acc: any, row: any) => {
+                      const proj = row.projectName || project.name;
+                      if (!acc[proj]) {
+                         acc[proj] = { body: [], back: [], facades: [], hardware: [] };
+                         acc[proj]._lastCategory = "body"; // keep track per project
+                      }
+                      
+                      const type = row.type;
+                      const name = (row.name || "").toLowerCase();
+                      const decor = row.decor || row.brand || "Не указан";
+                      const sub = row.sub || "";
+                      const qty = row.qty || row.totalQty || row.quantity || "";
+                      const qtyNormalized = typeof qty === 'number' && type !== 'edge' ? `${qty} шт` : qty;
+                      
+                      const isEdge = type === "product_edge" || type === "edge" || name.includes("кромка");
+                      if (isEdge) {
+                        const edgeStr = `${row.name}${decor !== "Не указан" ? ` ${decor}` : ""} - ${qtyNormalized}`;
+                        const targetArr = acc[proj][acc[proj]._lastCategory] || acc[proj].body;
+                        if (targetArr.length > 0) {
+                           targetArr[targetArr.length - 1] += ` (+ ${edgeStr.trim()})`;
+                        } else {
+                           acc[proj].body.push(edgeStr.trim());
+                        }
+                      } else {
+                        const itemStr = `${row.name}${decor !== "Не указан" ? ` ${decor}` : ""}${sub ? ` (${sub})` : ""} - ${qtyNormalized}`;
+                        if (type === "facade" || name.includes("фасад")) {
+                          acc[proj].facades.push(itemStr);
+                          acc[proj]._lastCategory = "facades";
+                        } else if (name.includes("хдф") || name.includes("двп") || (row.sub || "").toLowerCase().includes("задняя")) {
+                          acc[proj].back.push(itemStr);
+                          acc[proj]._lastCategory = "back";
+                        } else if (type === "hardware" || type === "product") {
+                          acc[proj].hardware.push(itemStr);
+                          // Dont change last category for hardware
+                        } else {
+                          // Falls back to body
+                          acc[proj].body.push(itemStr);
+                          acc[proj]._lastCategory = "body";
+                        }
+                      }
+                      return acc;
+                    }, {});
+                  })()).map(([projName, groups]: [string, any]) => (
+                    <div key={projName} className="pl-2 border-l-2 border-blue-100 mb-6 last:mb-0">
+                      <h4 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
+                        <Package className="w-4 h-4 text-blue-400" />
+                        {projName}:
+                      </h4>
+                      <div className="space-y-4 ml-2">
+                        {groups.body.length > 0 && (
+                          <div>
+                            <span className="font-bold text-gray-800 uppercase text-[10px] tracking-wider">Корпус:</span> 
+                            <ul className="list-disc pl-5 mt-1 text-gray-700">
+                              {groups.body.map((str: string, i: number) => <li key={i}>{str}</li>)}
+                            </ul>
+                          </div>
+                        )}
+                        {groups.back.length > 0 && (
+                          <div>
+                            <span className="font-bold text-gray-800 uppercase text-[10px] tracking-wider">Задняя стенка:</span> 
+                            <ul className="list-disc pl-5 mt-1 text-gray-700">
+                              {groups.back.map((str: string, i: number) => <li key={i}>{str}</li>)}
+                            </ul>
+                          </div>
+                        )}
+                        {groups.facades.length > 0 && (
+                          <div>
+                            <span className="font-bold text-gray-800 uppercase text-[10px] tracking-wider">Фасады:</span> 
+                            <ul className="list-disc pl-5 mt-1 text-gray-700">
+                              {groups.facades.map((str: string, i: number) => <li key={i}>{str}</li>)}
+                            </ul>
+                          </div>
+                        )}
+                        {groups.hardware.length > 0 && (
+                          <div>
+                            <span className="font-bold text-gray-800 uppercase text-[10px] tracking-wider">Фурнитура и комплектующие:</span> 
+                            <ul className="list-disc pl-5 mt-1 text-gray-700">
+                              {groups.hardware.map((str: string, i: number) => <li key={i}>{str}</li>)}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {(project.data?.summaryRows?.length === 0 && !project.data?.summary?.materials) && (
+                    <p className="text-xs text-gray-400 italic">Данные о материалах не найдены</p>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            {/* Sketches Section */}
+            <section>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest">Эскизы и чертежи</h3>
+                <label className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer">
+                  <Upload className="w-4 h-4" /> Загрузить
+                  <input type="file" className="hidden" onChange={handleFileUpload} />
+                </label>
+              </div>
+              
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                {sketches.map((url, index) => (
+                  <div key={index} className="relative group aspect-square rounded-2xl overflow-hidden border border-gray-100 shadow-sm cursor-pointer" onClick={() => setSelectedSketch(url)}>
+                    <img src={url} alt={`Sketch ${index + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    {userRole !== 'admin' && project.status === 'draft' && (
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleRemoveSketch(index); }}
+                        className="absolute top-2 right-2 p-1.5 bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {sketches.length === 0 && (
+                  <div className="col-span-full py-12 border-2 border-dashed border-gray-200 rounded-3xl flex flex-col items-center justify-center text-gray-400">
+                    <ImageIcon className="w-10 h-10 mb-2 opacity-20" />
+                    <p className="text-sm font-medium">Эскизы не добавлены</p>
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+        )}
+
+        {!selectedSketch && (
+          <div className="p-6 border-t border-gray-100 bg-gray-50/50 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3 w-full sm:w-auto">
+              <button 
+                onClick={() => {
+                  if (onPrint) onPrint(project);
+                }}
+                className="px-6 py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700"
+              >
+                Сохранить PDF
+              </button>
+              <button 
+                onClick={() => {
+                  if (onPrintProposal) onPrintProposal(project);
+                }}
+                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-sm"
+              >
+                Коммерческое предложение
+              </button>
+               <button 
+                onClick={handleSendProject}
+                disabled={isSubmitting}
+                className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700"
+              >
+                Оформить проект
+              </button>
+              {project.status === 'sent' && (
+                <button 
+                  onClick={handleTransferToSupervisor}
+                  disabled={isSubmitting}
+                  className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700"
+                >
+                  Передать руководителю
+                </button>
+              )}
+            </div>
+            <div className="text-sm text-gray-500">
+              Статус: <span className={cn(
+                "font-bold",
+                project.status === 'sent' ? "text-orange-600" :
+                project.status === 'transferred' ? "text-green-600" : "text-blue-600"
+              )}>
+                {project.status === 'sent' ? 'Оформлен' : 
+                 project.status === 'transferred' ? 'Передан в производство' : 'Черновик'}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const SpecItem = ({ label, value }: { label: string, value: string }) => (
+  <div>
+    <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">{label}</label>
+    <p className="text-sm font-bold text-gray-900 truncate">{value}</p>
+  </div>
+);

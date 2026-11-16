@@ -1,0 +1,8 @@
+16117:        or(where("createdBy", "==", userData.uid), where("status", "==", "transferred")),
+16123:        or(where("createdBy", "==", userData.uid), where("status", "==", "transferred")),
+16130:        where("createdBy", "==", userData.uid),
+16136:        where("createdBy", "==", userData.uid),
+16261:      const createdByValue = existingProject?.createdBy || userData.uid;
+16262:      const createdByNameValue = existingProject?.createdByName || userData.displayName || userData.email || "Пользователь";
+16268:        createdBy: createdByValue,
+16269:        createdByName: createdByNameValue,

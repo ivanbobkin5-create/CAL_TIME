@@ -1,0 +1,70 @@
+--- src/App.tsx
++++ src/App.tsx
+@@ -25170,36 +25170,28 @@
+                         </div>
+                       </div>
+ 
+-                      <div className="flex items-center gap-3 w-full sm:w-auto jus                      <div className="flex flex-col min-w-0">
+-                        {(companyType === "Салон" || companyType === "Дизайнер") && (
+-                          <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">
+-                            Розница клиенту
+-                          </span>
+-                        )}
+-                        {(() => {
+-                          const coeff = getProductCoefficient(product, customerType, resolveBrandCoefficient);
+-                          let minPurchasePrice = product.purchasePrice || product.price || 0;
+-                          
+-                          if (product.variations && product.variations.length > 0) {
+-                            const variationPrices = product.variations.map((v: any) => v.purchasePrice).filter((p: any) => p !== undefined);
+-                            if (variationPrices.length > 0) {
+-                              minPurchasePrice = Math.min(minPurchasePrice, ...variationPrices);
+-                            }
+-                          }
+-                          const originalDisplayPrice = Math.round(minPurchasePrice * coeff);
+-                          const finalDisplayPrice = maxDiscount > 0 ? Math.round(originalDisplayPrice * (1 - maxDiscount / 100)) : originalDisplayPrice;
+-
+-                          return (
+-                            <div className="flex flex-col items-start">
+-                              {maxDiscount > 0 && (
+-                                <span className="text-[10px] text-gray-400 line-through">
+-                                  {product.variations && product.variations.length > 0 ? "от " : ""}
+-                                  {(originalDisplayPrice ?? 0).toLocaleString()} ₽
+-                                </span>
+-                              )}
+-                              <span className="text-xl font-black text-gray-900 whitespace-nowrap flex items-center gap-2">
+-                                {maxDiscount > 0 && <span className="text-xs text-rose-500 font-bold">-{maxDiscount}%</span>}
+-                                {product.variations && product.variations.length > 0 ? "от " : ""}
+-                                {(finalDisplayPrice ?? 0).toLocaleString()} ₽
+-                              </span>
+-                            </div>
+-                          );
+-                        })()}
+-                      </div>wProduct as any).kitchenModules || [])];
++                      <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
++                        <div className="flex items-center border border-gray-300 rounded-xl bg-white overflow-hidden shadow-2xs">
++                          <button
++                            type="button"
++                            onClick={() => {
++                              const updated = [...((newProduct as any).kitchenModules || [])];
++                              const idx = updated.findIndex((m: any) => String(m.id) === String(mod.id));
++                              if (idx >= 0) {
++                                if (updated[idx].qty > 1) {
++                                  updated[idx].qty -= 1;
++                                } else {
++                                  updated.splice(idx, 1);
++                                }
++                                setNewProduct((prev) => ({ ...prev, kitchenModules: updated }));
++                              }
++                            }}
++                            disabled={!isAdded}
++                            className="px-3 py-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-30 font-bold text-sm cursor-pointer"
++                          >
++                            -
++                          </button>
++                          <input
++                            type="number"
++                            min="0"
++                            value={currentQty}
++                            onChange={(e) => {
++                              const val = parseInt(e.target.value) || 0;
++                              const updated = [...((newProduct as any).kitchenModules || [])];
