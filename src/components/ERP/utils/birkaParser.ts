@@ -2,15 +2,22 @@ import JSZip from 'jszip';
 import * as pako from 'pako';
 import * as XLSX from 'xlsx';
 import { smartDecodeFile } from '../../../utils/fileEncodingDetector';
+import { extractBazisXmlHardware } from './hardwareParser';
+import { CNCDrillPattern, CNCDrillHole, CNCGroove, CNCEdgeSide } from './cncParser';
+import { OrderHardwareItem } from '../types';
 
 // Interface for a single Birka / Label item
 export interface BirkaDetail {
   id: string;
   labelNumber: string;         // № детали / Позиция (без знака #)
   orderNumber?: string;        // Номер заказа
+  partCode?: string;           // Код детали из Базис (например, КС254.014)
+  moduleName?: string;         // Модуль / Сборочная единица (например, "01 Н_Пр_1Ф_R")
   name: string;                // Название детали (Боковина, Полка, Фасад)
   length: number;              // Длина (мм)
   width: number;               // Ширина (мм)
+  cutLength?: number;          // Длина детали без облицовки (пильный размер, мм)
+  cutWidth?: number;           // Ширина детали без облицовки (пильный размер, мм)
   thickness: number;           // Толщина (мм)
   material: string;            // Материал (ЛДСП 16мм, МДФ 18мм и т.д.)
   quantity: number;            // Количество (шт)
@@ -27,6 +34,7 @@ export interface BirkaDetail {
   holesEnd?: number;           // Количество отверстий в торец
   holesFace?: number;          // Количество отверстий в пласть
   holesCount?: number;         // Общее количество отверстий
+  cncPattern?: CNCDrillPattern;// Полная карта присадки и пазов из единого XML Базис-Мебельщик
 }
 
 export interface BirkaMaterialGroup {
@@ -55,6 +63,30 @@ export interface BirkaParseResult {
   
   rawTextPreview: string;
   isDemoFile?: boolean;
+  isUnifiedBazisXml?: boolean;
+  projectMeta?: {
+    orderNumber?: string;
+    projectName?: string;
+    article?: string;
+    modulesCount?: number;
+    totalHolesCount?: number;
+    totalGroovesCount?: number;
+    modulesList?: Array<{
+      pos: string;
+      code: string;
+      name: string;
+      width: number;
+      height: number;
+      depth: number;
+      partsCount: number;
+    }>;
+  };
+  extractedHardware?: {
+    items: OrderHardwareItem[];
+    totalItemsCount: number;
+    totalQuantity: number;
+    categoriesSummary: Array<{ category: string; count: number; totalQuantity: number }>;
+  };
 }
 
 // Compute simple fast hash for file identification
@@ -737,6 +769,11 @@ export function consolidateDetails(details: BirkaDetail[]): BirkaDetail[] {
         labelNumber: cleanLabel,
         name: cleanName,
         quantity: finalQuantity,
+        partCode: first.partCode || items.find(i => i.partCode)?.partCode,
+        moduleName: first.moduleName || items.find(i => i.moduleName)?.moduleName,
+        cutLength: first.cutLength ?? items.find(i => i.cutLength !== undefined)?.cutLength,
+        cutWidth: first.cutWidth ?? items.find(i => i.cutWidth !== undefined)?.cutWidth,
+        texture: first.texture || items.find(i => i.texture)?.texture,
         edgeL1: first.edgeL1 || items.find(i => i.edgeL1)?.edgeL1,
         edgeL2: first.edgeL2 || items.find(i => i.edgeL2)?.edgeL2,
         edgeW1: first.edgeW1 || items.find(i => i.edgeW1)?.edgeW1,
@@ -746,6 +783,7 @@ export function consolidateDetails(details: BirkaDetail[]): BirkaDetail[] {
         holesEnd: first.holesEnd ?? items.find(i => i.holesEnd !== undefined)?.holesEnd,
         holesFace: first.holesFace ?? items.find(i => i.holesFace !== undefined)?.holesFace,
         holesCount: first.holesCount ?? items.find(i => i.holesCount !== undefined)?.holesCount,
+        cncPattern: first.cncPattern || items.find(i => i.cncPattern)?.cncPattern,
       });
     }
   }
@@ -950,7 +988,7 @@ export async function parseBirkaFile(
       const birkaFiles = Object.keys(zip.files).filter(fn => {
         const lower = fn.toLowerCase();
         return !zip.files[fn].dir && (
-          lower.endsWith('.bir') || lower.endsWith('.brx') || 
+          lower.endsWith('.xml') || lower.endsWith('.bir') || lower.endsWith('.brx') || 
           lower.endsWith('.txt') || lower.endsWith('.csv') || lower.endsWith('.tsv')
         );
       });
@@ -973,6 +1011,22 @@ export async function parseBirkaFile(
     if (file.name.toLowerCase().endsWith('.bir')) formatDetected = 'Базис-Бирка (.bir)';
   }
 
+  // Unified Bazis-Mebelshik XML Project check (<Проект><Изделие>...</Изделие></Проект>)
+  let isUnifiedBazisXml = false;
+  let projectMeta: BirkaParseResult['projectMeta'] | undefined;
+  let extractedHardware: BirkaParseResult['extractedHardware'] | undefined;
+
+  if (!parsedDetails && rawText && rawText.includes('<Изделие>') && rawText.includes('<СписокЭлементов>')) {
+    const bazisRes = parseBazisProjectXml(rawText, file.name);
+    if (bazisRes.details.length > 0) {
+      parsedDetails = bazisRes.details;
+      isUnifiedBazisXml = true;
+      projectMeta = bazisRes.projectMeta;
+      extractedHardware = bazisRes.extractedHardware;
+      formatDetected = `Единая спецификация Базис-Мебельщик XML (Детали + Кромка + ЧПУ Присадка + Фурнитура)`;
+    }
+  }
+
   const details = parsedDetails || parseBirFileText(rawText, customMapping);
   const { groups, allEdges, totalAreaM2, totalEdgeMeters } = buildMaterialGroups(details);
 
@@ -989,6 +1043,467 @@ export async function parseBirkaFile(
     totalAreaM2,
     totalEdgeMeters,
     totalPartsCount: details.reduce((acc, d) => acc + (d.quantity || 1), 0),
-    rawTextPreview: rawText.slice(0, 3000)
+    rawTextPreview: rawText.slice(0, 3000),
+    isUnifiedBazisXml,
+    projectMeta,
+    extractedHardware
   };
 }
+
+/**
+ * Parses a unified Bazis-Mebelshik XML project file (<Проект><Изделие>...):
+ * - Extracts all real panels with exact dimensions, cut dimensions, material, texture, moduleName, partCode
+ * - Maps all 4 edges (edgeL1, edgeL2, edgeW1, edgeW2)
+ * - Builds an exact 3D/2D CNCDrillPattern per panel from <Отверстия><Отверстие> and <СписокПазов><Паз>
+ * - Extracts full Hardware & Fasteners specification via extractBazisXmlHardware
+ */
+export function parseBazisProjectXml(
+  xmlText: string,
+  fileName: string = 'project.xml'
+): {
+  details: BirkaDetail[];
+  projectMeta: NonNullable<BirkaParseResult['projectMeta']>;
+  extractedHardware?: BirkaParseResult['extractedHardware'];
+} {
+  const rawDetails: BirkaDetail[] = [];
+  const modulesList: NonNullable<NonNullable<BirkaParseResult['projectMeta']>['modulesList']> = [];
+  let orderNumber = '';
+  let projectName = '';
+  let article = '';
+  let totalHolesCount = 0;
+  let totalGroovesCount = 0;
+
+  if (typeof DOMParser !== 'undefined') {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xmlText, 'text/xml');
+
+    const getDirectChild = (el: Element, tagName: string): Element | null => {
+      for (let i = 0; i < el.children.length; i++) {
+        if (el.children[i].tagName === tagName) {
+          return el.children[i];
+        }
+      }
+      return null;
+    };
+
+    const getDirectChildText = (el: Element, tagName: string): string => {
+      const child = getDirectChild(el, tagName);
+      return child ? (child.textContent || '').trim() : '';
+    };
+
+    const parseNum = (val: string, fallback = 0): number => {
+      if (!val) return fallback;
+      const n = parseFloat(val.replace(',', '.'));
+      return isNaN(n) ? fallback : Math.round(n * 100) / 100;
+    };
+
+    const izdelie = doc.getElementsByTagName('Изделие')[0] || doc.documentElement;
+    if (izdelie) {
+      projectName = getDirectChildText(izdelie, 'Наименование') || doc.documentElement.getAttribute('Наименование') || '';
+      article = getDirectChildText(izdelie, 'Артикул');
+      orderNumber = getDirectChildText(izdelie, 'Заказ') || doc.documentElement.getAttribute('Наименование') || '';
+    }
+
+    const extractEdgeInfo = (el: Element, tagName: string): { label?: string; thickness: number; length: number } => {
+      const listEl = getDirectChild(el, tagName);
+      if (!listEl) return { thickness: 0, length: 0 };
+      const kromkaEl = getDirectChild(listEl, 'Кромка');
+      if (!kromkaEl) return { thickness: 0, length: 0 };
+      const kName = getDirectChildText(kromkaEl, 'Наименование');
+      const kOboz = getDirectChildText(kromkaEl, 'Обозначение');
+      const kThick = parseNum(getDirectChildText(kromkaEl, 'Толщина'), 1);
+      const kLen = parseNum(getDirectChildText(kromkaEl, 'Длина'), 0);
+      const label = (kName || kOboz).trim();
+      return {
+        label: label || undefined,
+        thickness: kThick || 1,
+        length: kLen
+      };
+    };
+
+    let detailIndex = 1;
+
+    const walkElements = (el: Element, currentModuleTitle: string, currentModuleTracker?: { partsCount: number }) => {
+      const tag = el.tagName;
+      let activeModuleTitle = currentModuleTitle;
+      let activeTracker = currentModuleTracker;
+
+      if (tag === 'Сборка' || tag === 'Блок') {
+        const isAssemblyUnit = getDirectChildText(el, 'СборочнаяEдиница') === 'Y';
+        const mName = getDirectChildText(el, 'Наименование');
+        const mPos = getDirectChildText(el, 'Позиция');
+        const mCode = getDirectChildText(el, 'Обозначение');
+
+        if (isAssemblyUnit && mName) {
+          const codePrefix = mCode || mPos;
+          activeModuleTitle = codePrefix ? `${codePrefix}. ${mName}` : mName;
+          const modEntry = {
+            pos: mPos || String(modulesList.length + 1),
+            code: mCode || mPos || String(modulesList.length + 1),
+            name: mName,
+            width: parseNum(getDirectChildText(el, 'Ширина')),
+            height: parseNum(getDirectChildText(el, 'Высота')),
+            depth: parseNum(getDirectChildText(el, 'Глубина')),
+            partsCount: 0
+          };
+          modulesList.push(modEntry);
+          activeTracker = modEntry;
+        }
+
+        const listEl = getDirectChild(el, 'СписокЭлементов');
+        if (listEl) {
+          for (let i = 0; i < listEl.children.length; i++) {
+            walkElements(listEl.children[i], activeModuleTitle, activeTracker);
+          }
+        }
+        return;
+      }
+
+      if (tag === 'Объект') {
+        const objType = getDirectChildText(el, 'ТипОбъекта');
+        if (objType === 'Панель') {
+          const pName = getDirectChildText(el, 'Наименование');
+          const pThickness = parseNum(getDirectChildText(el, 'ОбщаяТолщина'), 16);
+          const mainMatEl = getDirectChild(el, 'ОсновнойМатериал');
+          const matName = mainMatEl ? getDirectChildText(mainMatEl, 'Наименование') : 'ЛДСП 16 мм';
+
+          // Skip virtual zero-thickness or transparent helper bounding panels
+          const isVirtualPanel =
+            pThickness <= 1 ||
+            matName.toLowerCase().includes('пластмасса прозрачная') ||
+            pName.toLowerCase() === 'наполнение';
+
+          if (!isVirtualPanel) {
+            const pLen = parseNum(getDirectChildText(el, 'Длина_готовой_детали') || getDirectChildText(el, 'Длина'), 700);
+            const pWid = parseNum(getDirectChildText(el, 'Ширина_готовой_детали') || getDirectChildText(el, 'Ширина'), 500);
+            const cutLen = parseNum(getDirectChildText(el, 'Длина_детали_без_облицовки'), pLen);
+            const cutWid = parseNum(getDirectChildText(el, 'Ширина_детали_без_облицовки'), pWid);
+            const qty = Math.max(1, parseInt(getDirectChildText(el, 'Количество'), 10) || 1);
+            const partCode = getDirectChildText(el, 'КодДетали');
+            const oboz = getDirectChildText(el, 'Обозначение');
+            const pos = getDirectChildText(el, 'Позиция');
+            const texture = getDirectChildText(el, 'ОриентацияТекстуры');
+
+            const labelNumber = (oboz && oboz.trim()) ? oboz.trim() : (partCode && partCode.trim()) ? partCode.trim() : (pos ? String(pos).trim() : String(detailIndex));
+
+            // Edges: СписокКромок1..4
+            const k1 = extractEdgeInfo(el, 'СписокКромок1');
+            const k2 = extractEdgeInfo(el, 'СписокКромок2');
+            const k3 = extractEdgeInfo(el, 'СписокКромок3');
+            const k4 = extractEdgeInfo(el, 'СписокКромок4');
+
+            // In Bazis XML: СписокКромок1 & 2 typically run along Ширина (W1/W2), and СписокКромок3 & 4 along Длина (L1/L2).
+            // Verify by comparing edge length against pLen and pWid when distinct.
+            let edgeL1Info = k3;
+            let edgeL2Info = k4;
+            let edgeW1Info = k1;
+            let edgeW2Info = k2;
+
+            if (Math.abs(pLen - pWid) > 2) {
+              const ref12Len = k1.length || k2.length;
+              const ref34Len = k3.length || k4.length;
+              if (
+                (ref12Len > 0 && Math.abs(ref12Len - pLen) < Math.abs(ref12Len - pWid)) ||
+                (ref34Len > 0 && Math.abs(ref34Len - pWid) < Math.abs(ref34Len - pLen))
+              ) {
+                edgeL1Info = k1;
+                edgeL2Info = k2;
+                edgeW1Info = k3;
+                edgeW2Info = k4;
+              }
+            }
+
+            // Extract Holes (<Отверстия><Отверстие>)
+            const holesEl = getDirectChild(el, 'Отверстия');
+            const cncHoles: CNCDrillHole[] = [];
+            const toolsUsedMap = new Map<string, number>();
+            let holesEnd = 0;
+            let holesFace = 0;
+
+            if (holesEl) {
+              let hIdx = 1;
+              for (let i = 0; i < holesEl.children.length; i++) {
+                const hNode = holesEl.children[i];
+                if (hNode.tagName !== 'Отверстие') continue;
+
+                const rawX = parseNum(getDirectChildText(hNode, 'ПозицияX'));
+                const rawY = parseNum(getDirectChildText(hNode, 'ПозицияY'));
+                const diam = parseNum(getDirectChildText(hNode, 'Диаметр'), 5);
+                const hType = getDirectChildText(hNode, 'Тип'); // "Сквозное" | "Глухое"
+                const rawDepth = parseNum(getDirectChildText(hNode, 'Глубина'), pThickness);
+                const dirX = parseNum(getDirectChildText(hNode, 'НаправлениеX'));
+                const dirY = parseNum(getDirectChildText(hNode, 'НаправлениеY'));
+                const dirZ = parseNum(getDirectChildText(hNode, 'НаправлениеZ'));
+
+                let face: CNCDrillHole['face'] = 'A';
+                let hx = Math.max(0, Math.min(pLen, rawX));
+                let hy = Math.max(0, Math.min(pWid, rawY));
+                let hz = hType === 'Сквозное' ? pThickness : (rawDepth || 12);
+                let toolId = `T_${diam}`;
+
+                if (Math.abs(dirX) > 0.5) {
+                  // Edge hole along X direction (into Left W1 or Right W2 edge)
+                  face = dirX > 0 ? 'left' : 'right';
+                  hx = dirX > 0 ? 0 : pLen;
+                  hz = rawDepth || 30;
+                  toolId = dirX > 0 ? 'T101' : 'T102';
+                  holesEnd++;
+                } else if (Math.abs(dirY) > 0.5) {
+                  // Edge hole along Y direction (into Bottom L1 or Top L2 edge)
+                  face = dirY > 0 ? 'bottom' : 'top';
+                  hy = dirY > 0 ? 0 : pWid;
+                  hz = rawDepth || 30;
+                  toolId = dirY > 0 ? 'T104' : 'T103';
+                  holesEnd++;
+                } else {
+                  // Plast hole (Face A or Face B)
+                  face = dirZ < 0 ? 'A' : 'B';
+                  hz = hType === 'Сквозное' ? pThickness : (rawDepth || pThickness);
+                  holesFace++;
+                }
+
+                toolsUsedMap.set(toolId, diam);
+                cncHoles.push({
+                  id: `xml-hole-${detailIndex}-${hIdx++}`,
+                  x: hx,
+                  y: hy,
+                  z: hz,
+                  diameter: diam,
+                  face,
+                  toolId,
+                  description: `${hType || 'Отверстие'} ⌀${diam}×${hz}мм (${
+                    face === 'A' ? 'Пласть А' :
+                    face === 'B' ? 'Пласть B' :
+                    face === 'left' ? 'Торец лев.' :
+                    face === 'right' ? 'Торец прав.' :
+                    face === 'bottom' ? 'Торец нижн.' : 'Торец верхн.'
+                  })`
+                });
+              }
+            }
+
+            // If all plast holes happened to be on face 'B' and none on 'A', normalize to 'A' so primary view is solid
+            const hasFaceA = cncHoles.some(h => h.face === 'A');
+            const hasFaceB = cncHoles.some(h => h.face === 'B');
+            if (!hasFaceA && hasFaceB) {
+              cncHoles.forEach(h => {
+                if (h.face === 'B') h.face = 'A';
+              });
+            }
+
+            // Extract Grooves (<СписокПазов><Паз>)
+            const groovesEl = getDirectChild(el, 'СписокПазов');
+            const cncGrooves: CNCGroove[] = [];
+            const grooveNotes: string[] = [];
+
+            if (groovesEl) {
+              let gIdx = 1;
+              for (let i = 0; i < groovesEl.children.length; i++) {
+                const gNode = groovesEl.children[i];
+                if (gNode.tagName !== 'Паз') continue;
+                const gName = getDirectChildText(gNode, 'Название');
+                const gOboz = getDirectChildText(gNode, 'Обозначение');
+                const gLen = parseNum(getDirectChildText(gNode, 'Длина'), pLen);
+                const gWid = parseNum(getDirectChildText(gNode, 'Ширина'), 4) || 4;
+                const gDep = parseNum(getDirectChildText(gNode, 'Глубина'), 8) || 8;
+
+                // Try to infer offset from groove name e.g. "Паз 51*8" or "Паз 4*8*16"
+                let offset = 16;
+                const numsInName = (gName || gOboz).match(/\d+(?:[.,]\d+)?/g)?.map(Number) || [];
+                if (numsInName.length >= 3) {
+                  offset = numsInName[2];
+                } else if (numsInName.length === 2 && numsInName[0] > 10) {
+                  offset = numsInName[0];
+                }
+
+                const runsAlongY = Math.abs(gLen - pWid) < Math.abs(gLen - pLen);
+                if (runsAlongY) {
+                  cncGrooves.push({
+                    id: `xml-groove-${detailIndex}-${gIdx++}`,
+                    x1: Math.min(pLen - 4, offset),
+                    y1: 0,
+                    x2: Math.min(pLen - 4, offset),
+                    y2: pWid,
+                    width: gWid,
+                    depth: gDep,
+                    face: 'A'
+                  });
+                } else {
+                  cncGrooves.push({
+                    id: `xml-groove-${detailIndex}-${gIdx++}`,
+                    x1: 0,
+                    y1: Math.min(pWid - 4, offset),
+                    x2: pLen,
+                    y2: Math.min(pWid - 4, offset),
+                    width: gWid,
+                    depth: gDep,
+                    face: 'A'
+                  });
+                }
+
+                grooveNotes.push(gOboz || gName || `Паз ${gWid}×${gDep}мм`);
+              }
+            }
+
+            // Check custom properties (<ПользовательскиеСвойства><Свойство>) for Фрезеровка / Завал
+            const customPropsNotes: string[] = [];
+            const propsEl = getDirectChild(el, 'ПользовательскиеСвойства');
+            if (propsEl) {
+              for (let i = 0; i < propsEl.children.length; i++) {
+                const prop = propsEl.children[i];
+                const propName = getDirectChildText(prop, 'Имя');
+                const propVal = getDirectChildText(prop, 'Значение');
+                if (
+                  propVal &&
+                  !/^(нет|без\s|не задан|0$)/i.test(propVal) &&
+                  (propName.toLowerCase().includes('фрезер') || propName.toLowerCase().includes('завал'))
+                ) {
+                  customPropsNotes.push(`${propName}: ${propVal}`);
+                }
+              }
+            }
+
+            const holesTotal = holesEnd + holesFace;
+            totalHolesCount += holesTotal * qty;
+            totalGroovesCount += cncGrooves.length * qty;
+
+            const noteParts: string[] = [];
+            if (activeModuleTitle) noteParts.push(`Модуль: ${activeModuleTitle}`);
+            if (grooveNotes.length > 0) noteParts.push(`Паз: ${grooveNotes.join(', ')}`);
+            if (holesTotal > 0) noteParts.push(`Присадка: ${holesTotal} отв. (пласть: ${holesFace}, торец: ${holesEnd})`);
+            if (customPropsNotes.length > 0) noteParts.push(customPropsNotes.join('; '));
+
+            const cncEdges: Record<'L1' | 'L2' | 'W1' | 'W2', CNCEdgeSide> = {
+              L1: {
+                side: 'L1',
+                name: edgeL1Info.label || 'Длина 1 (L1)',
+                thickness: edgeL1Info.thickness || 1,
+                color: '#10b981',
+                hasEdge: !!edgeL1Info.label
+              },
+              L2: {
+                side: 'L2',
+                name: edgeL2Info.label || 'Длина 2 (L2)',
+                thickness: edgeL2Info.thickness || 1,
+                color: '#059669',
+                hasEdge: !!edgeL2Info.label
+              },
+              W1: {
+                side: 'W1',
+                name: edgeW1Info.label || 'Ширина 1 (W1)',
+                thickness: edgeW1Info.thickness || 1,
+                color: '#3b82f6',
+                hasEdge: !!edgeW1Info.label
+              },
+              W2: {
+                side: 'W2',
+                name: edgeW2Info.label || 'Ширина 2 (W2)',
+                thickness: edgeW2Info.thickness || 1,
+                color: '#2563eb',
+                hasEdge: !!edgeW2Info.label
+              }
+            };
+
+            const cncPattern: CNCDrillPattern = {
+              fileName: `${labelNumber}_${pName}.xml`,
+              length: pLen,
+              width: pWid,
+              thickness: pThickness,
+              edges: cncEdges,
+              holes: cncHoles,
+              grooves: cncGrooves,
+              toolsUsed: Array.from(toolsUsedMap.entries()).map(([toolId, diameter]) => ({
+                toolId,
+                diameter,
+                description: `Сверло/Фреза ⌀${diameter}мм`
+              }))
+            };
+
+            rawDetails.push({
+              id: `det_xml_${detailIndex}_${Math.random().toString(36).substring(2, 7)}`,
+              labelNumber,
+              orderNumber: orderNumber || undefined,
+              partCode: partCode || undefined,
+              moduleName: activeModuleTitle || undefined,
+              name: pName || `Деталь ${labelNumber}`,
+              length: pLen,
+              width: pWid,
+              cutLength: cutLen,
+              cutWidth: cutWid,
+              thickness: pThickness,
+              material: matName || 'ЛДСП 16 мм',
+              quantity: qty,
+              edgeL1: edgeL1Info.label,
+              edgeL2: edgeL2Info.label,
+              edgeW1: edgeW1Info.label,
+              edgeW2: edgeW2Info.label,
+              texture: texture || undefined,
+              notes: noteParts.length > 0 ? noteParts.join(' | ') : undefined,
+              barcode: partCode || (orderNumber ? `${orderNumber}_${labelNumber}` : labelNumber),
+              holesEnd,
+              holesFace,
+              holesCount: holesTotal,
+              cncPattern
+            });
+
+            if (activeTracker) {
+              activeTracker.partsCount += qty;
+            }
+            detailIndex++;
+          }
+        }
+      }
+
+      for (let i = 0; i < el.children.length; i++) {
+        walkElements(el.children[i], activeModuleTitle, activeTracker);
+      }
+    };
+
+    if (izdelie) {
+      walkElements(izdelie, '');
+    }
+  }
+
+  const consolidatedDetails = consolidateDetails(rawDetails);
+  const hwItems = extractBazisXmlHardware(xmlText);
+  let extractedHardware: BirkaParseResult['extractedHardware'] | undefined;
+
+  if (hwItems.length > 0) {
+    const catMap = new Map<string, { count: number; totalQuantity: number }>();
+    let totalQty = 0;
+    hwItems.forEach(it => {
+      totalQty += it.quantity;
+      const cat = it.category || 'Комплектующие и фурнитура';
+      const curr = catMap.get(cat) || { count: 0, totalQuantity: 0 };
+      curr.count += 1;
+      curr.totalQuantity = Math.round((curr.totalQuantity + it.quantity) * 100) / 100;
+      catMap.set(cat, curr);
+    });
+
+    extractedHardware = {
+      items: hwItems,
+      totalItemsCount: hwItems.length,
+      totalQuantity: Math.round(totalQty * 100) / 100,
+      categoriesSummary: Array.from(catMap.entries()).map(([category, stats]) => ({
+        category,
+        count: stats.count,
+        totalQuantity: stats.totalQuantity
+      }))
+    };
+  }
+
+  return {
+    details: consolidatedDetails,
+    projectMeta: {
+      orderNumber: orderNumber || undefined,
+      projectName: projectName || fileName,
+      article: article || undefined,
+      modulesCount: modulesList.length,
+      totalHolesCount,
+      totalGroovesCount,
+      modulesList
+    },
+    extractedHardware
+  };
+}
+

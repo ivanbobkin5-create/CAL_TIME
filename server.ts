@@ -2488,10 +2488,14 @@ function transliterate(str: string): string {
       if (localDoc && localParsed !== null) {
         try {
           const parsed = localParsed;
-          if (docPath.startsWith("users/") && parsed && (parsed.email?.includes("ivanbobkin") || parsed.email?.includes("yandex") || docPath.includes("admin_lk_ivanbobkin"))) {
+          const lowerDocEmail = String(parsed?.email || "").toLowerCase().trim();
+          if (docPath.startsWith("users/") && parsed && (lowerDocEmail === "lk.ivanbobkin@yandex.ru" || lowerDocEmail === "lk.ivanbobkin@gmail.com" || docPath.includes("admin_lk_ivanbobkin"))) {
             parsed.companyId = parsed.companyId || "e5om9lzxh";
             parsed.role = parsed.role || "admin";
             parsed.accessLevel = "admin";
+          } else if (docPath.startsWith("users/") && parsed) {
+            if (!parsed.displayName && parsed.name) parsed.displayName = parsed.name;
+            if (!parsed.name && parsed.displayName) parsed.name = parsed.displayName;
           }
           if (docPath.startsWith("companies/") && docPath.split("/").length === 2 && parsed) {
             const cid = docPath.split("/")[1];
@@ -5153,24 +5157,47 @@ function transliterate(str: string): string {
     portalInfo: { b24Name?: string; b24Photo?: string; b24UserId?: string }
   ) {
     const base = existingUser || {};
-    const existingName = String(base.displayName || base.name || "").trim();
+    const lowerEmail = String(base.email || "").toLowerCase().trim();
+    const isIvanUser =
+      lowerEmail === "lk.ivanbobkin@yandex.ru" ||
+      lowerEmail === "lk.ivanbobkin@gmail.com" ||
+      String(base.uid || "") === "5adbd3b0-f5b4-41d3-8abb-d106e2a3d013" ||
+      String(base.uid || "") === "ac9add56-d366-406f-9dd6-4767e2d08724";
+
+    let existingName = String(base.name || base.displayName || "").trim();
+    if (!isIvanUser && existingName.toLowerCase().includes("бобкин")) {
+      existingName = String(base.name || "").trim();
+      if (existingName.toLowerCase().includes("бобкин")) existingName = "";
+    }
     const existingPhoto = String(base.photoURL || base.avatarUrl || base.photo || "").trim();
 
-    const hasCustomName = Boolean(base.customNameSet && existingName);
+    const hasCustomName = Boolean((base.customNameSet || existingName) && existingName);
     const hasCustomPhoto =
       Boolean(base.customPhotoSet && existingPhoto) || existingPhoto.startsWith("data:image/");
 
-    const nextB24Name = String(portalInfo.b24Name || base.b24Name || "").trim();
-    const nextB24Photo = String(portalInfo.b24Photo || base.b24PhotoURL || "").trim();
+    let nextB24Name = String(portalInfo.b24Name || base.b24Name || "").trim();
+    let nextB24Photo = String(portalInfo.b24Photo || base.b24PhotoURL || "").trim();
 
-    const effectiveName = hasCustomName ? existingName : (nextB24Name || existingName);
+    // Prevent webhook owner ("Иван Бобкин") from polluting other employees' profiles
+    if (!isIvanUser && nextB24Name.toLowerCase().includes("бобкин")) {
+      nextB24Name = "";
+      nextB24Photo = "";
+    }
+
+    const effectiveName = existingName || nextB24Name;
     const effectivePhoto = hasCustomPhoto ? existingPhoto : (nextB24Photo || existingPhoto);
 
+    const cleanedBase = { ...base };
+    if (!isIvanUser && String(cleanedBase.b24Name || "").toLowerCase().includes("бобкин")) {
+      delete cleanedBase.b24Name;
+      delete cleanedBase.b24PhotoURL;
+    }
+
     return {
-      ...base,
+      ...cleanedBase,
       ...(nextB24Name ? { b24Name: nextB24Name } : {}),
       ...(nextB24Photo ? { b24PhotoURL: nextB24Photo } : {}),
-      ...(portalInfo.b24UserId ? { b24UserId: String(portalInfo.b24UserId) } : {}),
+      ...(portalInfo.b24UserId && (isIvanUser || portalInfo.b24UserId !== "1") ? { b24UserId: String(portalInfo.b24UserId) } : {}),
       customNameSet: hasCustomName,
       customPhotoSet: hasCustomPhoto,
       ...(effectiveName ? { displayName: effectiveName, name: effectiveName } : {}),
@@ -5306,23 +5333,26 @@ function transliterate(str: string): string {
       }
     }
 
-    // 3. Fallback for owner/admin: check user.current or ADMIN=Y
+    // 3. Fallback for owner/admin ONLY when email matches the webhook owner's email
     if (allowOwnerFallback) {
       const currentRes = await callBitrixMethod("user.current", {});
       if (currentRes) {
         const currEmail = String(currentRes.EMAIL || currentRes.email || "").trim().toLowerCase();
-        if (!cleanEmail || !currEmail || currEmail === cleanEmail || cleanEmail.includes("ivanbobkin") || allowOwnerFallback) {
+        if (cleanEmail && (currEmail === cleanEmail || cleanEmail === "lk.ivanbobkin@yandex.ru" || cleanEmail === "lk.ivanbobkin@gmail.com")) {
           const parsed = extractUserResult(currentRes);
           if (parsed) return parsed;
         }
       }
 
-      const admins = await callBitrixMethod("user.get", { ADMIN: "Y" });
-      if (Array.isArray(admins) && admins.length > 0) {
-        const matchedAdmin =
-          admins.find((a: any) => String(a.EMAIL || "").trim().toLowerCase() === cleanEmail) || admins[0];
-        const parsed = extractUserResult(matchedAdmin);
-        if (parsed) return parsed;
+      if (cleanEmail) {
+        const admins = await callBitrixMethod("user.get", { ADMIN: "Y" });
+        if (Array.isArray(admins) && admins.length > 0) {
+          const matchedAdmin = admins.find((a: any) => String(a.EMAIL || "").trim().toLowerCase() === cleanEmail);
+          if (matchedAdmin) {
+            const parsed = extractUserResult(matchedAdmin);
+            if (parsed) return parsed;
+          }
+        }
       }
     }
 
@@ -7932,10 +7962,12 @@ function transliterate(str: string): string {
       const addOrUpdateEmployee = (emp: any) => {
         if (!emp || !emp.id) return;
         const rawId = String(emp.id || emp.uid || '');
+        const lowerEmpEmail = String(emp.email || "").toLowerCase().trim();
         const isIvan = rawId === "5adbd3b0-f5b4-41d3-8abb-d106e2a3d013" ||
           rawId === "admin-ivan-bobkin" ||
           rawId.startsWith("admin_") ||
-          (emp.email && (emp.email.includes("ivanbobkin") || emp.email.includes("yandex"))) || 
+          lowerEmpEmail === "lk.ivanbobkin@yandex.ru" ||
+          lowerEmpEmail === "lk.ivanbobkin@gmail.com" ||
           (emp.name && emp.name.includes("Бобкин"));
         
         let targetId = emp.id;

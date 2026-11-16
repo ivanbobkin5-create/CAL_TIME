@@ -804,6 +804,29 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
         throw new Error('Файл не содержит деталей');
       }
 
+      const nowTimestamp = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('ru-RU');
+      const partsWithDrilling = parseRes.details.filter(d => (d.holesCount || 0) > 0 || (d.cncPattern?.grooves?.length || 0) > 0).length;
+
+      let autoAssemblyData = order.assemblyFileData;
+      if (parseRes.isUnifiedBazisXml && parseRes.projectMeta?.modulesList && parseRes.projectMeta.modulesList.length > 0 && !order.assemblyFileData) {
+        const modLines = [
+          `Проект: ${parseRes.projectMeta.projectName || order.projectName || ''}`,
+          `Заказ: ${parseRes.projectMeta.orderNumber || order.orderNumber || ''}`,
+          `Артикул: ${parseRes.projectMeta.article || '—'}`,
+          `Всего модулей (сборочных единиц): ${parseRes.projectMeta.modulesCount || parseRes.projectMeta.modulesList.length}`,
+          `------------------------------------------------------------`,
+          ...parseRes.projectMeta.modulesList.map(m =>
+            `Поз. ${m.code} | ${m.name} | Габариты (Ш×В×Г): ${m.width}×${m.height}×${m.depth} мм | Деталей: ${m.partsCount} шт.`
+          )
+        ];
+        autoAssemblyData = {
+          fileName: `${parseRes.fileName} (Модули сборки)`,
+          fileSize: file.size,
+          uploadedAt: nowTimestamp,
+          fileContent: modLines.join('\n')
+        };
+      }
+
       const rawUpdated: ProductionOrder = {
         ...order,
         totalAreaM2: parseRes.totalAreaM2,
@@ -812,11 +835,41 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
         birkaData: {
           fileName: parseRes.fileName,
           fileHash: parseRes.fileHash,
-          uploadedAt: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('ru-RU'),
+          uploadedAt: nowTimestamp,
+          isUnifiedBazisXml: parseRes.isUnifiedBazisXml,
+          projectMeta: parseRes.projectMeta,
           details: parseRes.details,
           materialGroups: parseRes.materialGroups,
           allEdges: parseRes.allEdges
-        }
+        },
+        ...(parseRes.extractedHardware && parseRes.extractedHardware.items.length > 0
+          ? {
+              hardwareData: {
+                fileName: `${parseRes.fileName} (Авто из XML)`,
+                fileHash: parseRes.fileHash,
+                uploadedAt: nowTimestamp,
+                items: parseRes.extractedHardware.items,
+                totalItemsCount: parseRes.extractedHardware.totalItemsCount,
+                totalQuantity: parseRes.extractedHardware.totalQuantity,
+                categoriesSummary: parseRes.extractedHardware.categoriesSummary
+              }
+            }
+          : {}),
+        ...(parseRes.isUnifiedBazisXml && partsWithDrilling > 0
+          ? {
+              cncFilesData: {
+                uploadedAt: `${nowTimestamp} (из XML)`,
+                totalFilesCount: partsWithDrilling,
+                files: parseRes.details
+                  .filter(d => (d.holesCount || 0) > 0 || (d.cncPattern?.grooves?.length || 0) > 0)
+                  .map(d => ({
+                    fileName: `${d.labelNumber}_${d.name}.xml`,
+                    fileText: `BAZIS_XML_PATTERN:${d.labelNumber}`
+                  }))
+              }
+            }
+          : {}),
+        ...(autoAssemblyData ? { assemblyFileData: autoAssemblyData } : {})
       };
 
       const { updatedOrder, analysis } = applyOrderRequirementsAnalysis(rawUpdated, settings);
@@ -1294,26 +1347,27 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
 
                         {/* Compact Quick Files Toolbar in Left Queue */}
                         <div className="flex items-center gap-1 pt-1 border-t border-slate-200/60 flex-wrap" onClick={(e) => e.stopPropagation()}>
-                          {/* 1. Birka File Button */}
+                          
+                          {/* Unified XML / Birka Specification Upload Button */}
                           {order.birkaData ? (
                             <button
                               onClick={() => setViewingBirkaModalOrder(order)}
-                              className="px-1.5 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-[8.5px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                              title={`Бирки: ${order.birkaData.fileName} (${order.birkaData.details.length} дет.)`}
+                              className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 text-[9.5px] font-extrabold flex items-center gap-1 cursor-pointer transition-colors"
+                              title={`Спецификация XML / Бирки: ${order.birkaData.fileName} (${order.birkaData.details.length} дет.)`}
                             >
-                              <FileText className="w-2.5 h-2.5 text-emerald-600" />
-                              <span>.bir ({order.birkaData.details.length})</span>
+                              <FileText className="w-3 h-3 text-emerald-600" />
+                              <span>XML/Бирки ({order.birkaData.details.length} дет.)</span>
                             </button>
                           ) : (
                             <label
-                              className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-700 border border-slate-200 hover:border-blue-300 text-[8.5px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
-                              title="Загрузить файл бирок (.bir)"
+                              className="px-2 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[9.5px] font-extrabold flex items-center gap-1 cursor-pointer shadow-xs transition-all"
+                              title="Загрузить единый XML файл спецификации (детали, присадка ЧПУ, кромка, фурнитура)"
                             >
-                              <Upload className="w-2.5 h-2.5" />
-                              <span>+ .bir</span>
+                              <Upload className="w-3 h-3" />
+                              <span>Загрузить XML спецификацию</span>
                               <input
                                 type="file"
-                                accept=".bir,.txt,.csv,.xlsx"
+                                accept=".xml,.bir,.txt,.csv,.xlsx,.xls,.zip"
                                 className="hidden"
                                 onChange={(e) => {
                                   const f = e.target.files?.[0];
@@ -2386,13 +2440,13 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                     {/* Upload Birka File Button */}
                     <label 
                       className="px-3.5 py-2.5 rounded-2xl bg-blue-50 hover:bg-blue-600 hover:text-white border border-blue-200 text-xs font-bold text-blue-700 shadow-2xs transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
-                      title="Загрузить файл раскроя и бирок (.bir, .csv, .tsv, .txt, .zip)"
+                      title="Загрузить единый XML Базис-Мебельщик или файл раскроя и бирок (.xml, .bir, .xlsx, .csv, .zip)"
                     >
                       <Upload className="w-3.5 h-3.5" />
-                      <span>{order.birkaData ? 'Заменить бирки' : '+ Файл бирок'}</span>
+                      <span>{order.birkaData ? 'Заменить XML / бирки' : '+ XML Базис / Бирки'}</span>
                       <input
                         type="file"
-                        accept=".bir,.csv,.tsv,.dbf,.zip,.txt,.xlsx,.xls"
+                        accept=".xml,.bir,.csv,.tsv,.dbf,.zip,.txt,.xlsx,.xls"
                         className="hidden"
                         onChange={(e) => {
                           const file = e.target.files?.[0];

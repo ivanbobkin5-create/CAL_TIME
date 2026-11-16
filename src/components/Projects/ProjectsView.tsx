@@ -1123,30 +1123,39 @@ export const ProjectsView = ({
   };
 
   const userProjects = useMemo(() => {
-    const isManagerOrHigher = 
+    const isAdminOrSupervisor = 
       userRole === "admin" || 
       userRole === "supervisor" || 
-      userRole === "manager" ||
-      companyData?.ownerUid === userId;
+      Boolean(currentUser?.isOwner) ||
+      Boolean(userId && companyData?.ownerUid === userId);
 
-    const baseProjects = (!userRole || isManagerOrHigher)
+    const baseProjects = isAdminOrSupervisor
       ? localProjects
-      : localProjects.filter((p) => p.createdBy === userId);
+      : localProjects.filter((p) => {
+          const isCreatedByMe = p.createdBy === userId || (p as any).assignedTo === userId;
+          const isEmailMatch = currentUser?.email && String((p as any).createdByEmail || p.data?.createdByEmail || "").toLowerCase() === String(currentUser.email).toLowerCase();
+          return isCreatedByMe || isEmailMatch;
+        });
 
     return baseProjects.filter(p => !deletedProjects.has(p.id) && !p.isDeleted && p.status !== "deleted");
-  }, [localProjects, userRole, userId, deletedProjects, companyData?.ownerUid]);
+  }, [localProjects, userRole, userId, deletedProjects, companyData?.ownerUid, currentUser]);
 
   const userSets = useMemo(() => {
     const isAdminOrSupervisor = 
       userRole === "admin" || 
       userRole === "supervisor" || 
-      companyData?.ownerUid === userId;
+      Boolean(currentUser?.isOwner) ||
+      Boolean(userId && companyData?.ownerUid === userId);
 
-    if (!userRole || isAdminOrSupervisor) {
+    if (isAdminOrSupervisor) {
       return localSets;
     }
-    return localSets.filter((s) => s.createdBy === userId);
-  }, [localSets, userRole, userId, companyData?.ownerUid]);
+    return localSets.filter((s) => {
+      const isCreatedByMe = s.createdBy === userId || (s as any).assignedTo === userId;
+      const isEmailMatch = currentUser?.email && String((s as any).createdByEmail || s.data?.createdByEmail || "").toLowerCase() === String(currentUser.email).toLowerCase();
+      return isCreatedByMe || isEmailMatch;
+    });
+  }, [localSets, userRole, userId, companyData?.ownerUid, currentUser]);
 
   // Map set.id -> subProjects
   const setSubProjectsMap = useMemo(() => {

@@ -149,7 +149,8 @@ export const PartnerOrdersView = ({
       const setsMap = new Map<string, any>();
       partnerSetsList.forEach(s => setsMap.set(s.id, s));
       mainSetsList.forEach(s => {
-        if (s.isPartnerOrder || s.originalSalonId || s.sourceCompanyId || s.status === 'production_transferred') {
+        const isGenuinePartner = (s.isPartnerOrder || (s.originalSalonId && s.originalSalonId !== companyId) || (s.sourceCompanyId && s.sourceCompanyId !== companyId)) && s.originalSalonId !== companyId;
+        if (isGenuinePartner) {
           if (!setsMap.has(s.id)) {
             setsMap.set(s.id, s);
           } else {
@@ -169,7 +170,8 @@ export const PartnerOrdersView = ({
       const projsMap = new Map<string, any>();
       partnerProjsList.forEach(p => projsMap.set(p.id, p));
       mainProjsList.forEach(p => {
-        if (p.isPartnerOrder || p.originalSalonId || p.sourceCompanyId || p.status === 'production_transferred') {
+        const isGenuinePartner = (p.isPartnerOrder || (p.originalSalonId && p.originalSalonId !== companyId) || (p.sourceCompanyId && p.sourceCompanyId !== companyId)) && p.originalSalonId !== companyId;
+        if (isGenuinePartner) {
           if (!projsMap.has(p.id)) {
             projsMap.set(p.id, p);
           } else {

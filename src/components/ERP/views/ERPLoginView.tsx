@@ -316,7 +316,9 @@ export const ERPLoginView: React.FC<ERPLoginViewProps> = ({
         const userDocRes = await fetch(`/api/db/doc/users/${uid}`);
         if (userDocRes.ok) {
           const userDocJson = await userDocRes.json();
-          userProfile = userDocJson.data ? JSON.parse(userDocJson.data) : null;
+          userProfile = userDocJson?.data
+            ? (typeof userDocJson.data === 'string' ? JSON.parse(userDocJson.data) : userDocJson.data)
+            : userDocJson;
         }
       } catch (err) {
         console.error('Failed to load user profile doc', err);
@@ -326,6 +328,20 @@ export const ERPLoginView: React.FC<ERPLoginViewProps> = ({
       const userCompanyId = loginData.companyId || userProfile?.companyId || (isSuperAdmin ? 'e5om9lzxh' : undefined);
       const targetCompanyId = company?.id || userCompanyId || 'e5om9lzxh';
 
+      // Also check employee doc inside company for productionRole / accessLevel / name
+      let empProfile: any = null;
+      if (targetCompanyId && uid) {
+        try {
+          const empRes = await fetch(`/api/db/doc/companies/${targetCompanyId}/employees/${uid}`);
+          if (empRes.ok) {
+            const empJson = await empRes.json();
+            empProfile = empJson?.data
+              ? (typeof empJson.data === 'string' ? JSON.parse(empJson.data) : empJson.data)
+              : empJson;
+          }
+        } catch (_) {}
+      }
+
       // Access validation: User should belong to this company OR be superadmin
       if (!isSuperAdmin && userCompanyId && targetCompanyId && userCompanyId !== targetCompanyId) {
         setErrorMsg('У вас нет доступа к ERP системе данного производства. Ваш аккаунт привязан к другой компании.');
@@ -333,16 +349,36 @@ export const ERPLoginView: React.FC<ERPLoginViewProps> = ({
         return;
       }
 
+      const resolvedName =
+        empProfile?.name ||
+        userProfile?.name ||
+        userProfile?.displayName ||
+        (isSuperAdmin ? "Иван Бобкин" : cleanEmail.split('@')[0]);
+
+      const resolvedRole =
+        empProfile?.productionRole ||
+        empProfile?.role ||
+        userProfile?.role ||
+        (isSuperAdmin ? 'admin' : 'Сотрудник производства');
+
+      const resolvedAccessLevel =
+        empProfile?.accessLevel ||
+        userProfile?.accessLevel ||
+        (isSuperAdmin || resolvedRole === 'admin' ? 'admin' : 'worker');
+
       const finalUserData = {
+        ...userProfile,
+        ...(empProfile || {}),
         uid,
         id: uid || userProfile?.id || userProfile?.uid,
         email: cleanEmail,
-        displayName: userProfile?.displayName || userProfile?.name || "Иван Бобкин (Администратор)",
-        role: userProfile?.role || 'admin',
-        accessLevel: 'admin',
-        isOwner: true,
-        avatar: userProfile?.avatar || userProfile?.photoURL || null,
-        ...userProfile,
+        name: resolvedName,
+        displayName: resolvedName,
+        employeeName: resolvedName,
+        role: resolvedRole,
+        accessLevel: resolvedAccessLevel,
+        isOwner: Boolean(isSuperAdmin || userProfile?.isOwner),
+        avatar: empProfile?.photoURL || userProfile?.avatar || userProfile?.photoURL || null,
         companyId: targetCompanyId
       };
 

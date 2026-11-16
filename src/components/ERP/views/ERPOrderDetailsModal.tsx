@@ -41,6 +41,7 @@ import { OrderClientPrivacyModal } from '../components/OrderClientPrivacyModal';
 import { HardwareSpecificationModal } from '../components/HardwareSpecificationModal';
 import { AssemblyFileModal } from '../components/AssemblyFileModal';
 import { ReportDefectModal } from '../components/ReportDefectModal';
+import { CNC3DDrillViewerModal } from '../components/CNC3DDrillViewerModal';
 
 interface ERPOrderDetailsModalProps {
   order: ProductionOrder;
@@ -138,6 +139,7 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
   const [showHardwareModal, setShowHardwareModal] = useState(false);
   const [showAssemblyModal, setShowAssemblyModal] = useState(false);
   const [defectTargetDetail, setDefectTargetDetail] = useState<any | null>(null);
+  const [active3DDrillDetail, setActive3DDrillDetail] = useState<any | null>(null);
 
   // Material & Scanning state
   const [selectedMaterial, setSelectedMaterial] = useState<string>('');
@@ -201,7 +203,7 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
     return null;
   };
 
-  // Upload Birka File Handler
+  // Upload Birka / Unified Bazis XML File Handler
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -215,6 +217,29 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
         throw new Error('Файл не содержит распознанных деталей или пуст');
       }
 
+      const nowTimestamp = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('ru-RU');
+      const partsWithDrilling = parseRes.details.filter(d => (d.holesCount || 0) > 0 || (d.cncPattern?.grooves?.length || 0) > 0).length;
+
+      let autoAssemblyData = order.assemblyFileData;
+      if (parseRes.isUnifiedBazisXml && parseRes.projectMeta?.modulesList && parseRes.projectMeta.modulesList.length > 0 && !order.assemblyFileData) {
+        const modLines = [
+          `Проект: ${parseRes.projectMeta.projectName || order.projectName || ''}`,
+          `Заказ: ${parseRes.projectMeta.orderNumber || order.orderNumber || ''}`,
+          `Артикул: ${parseRes.projectMeta.article || '—'}`,
+          `Всего модулей (сборочных единиц): ${parseRes.projectMeta.modulesCount || parseRes.projectMeta.modulesList.length}`,
+          `------------------------------------------------------------`,
+          ...parseRes.projectMeta.modulesList.map(m =>
+            `Поз. ${m.code} | ${m.name} | Габариты (Ш×В×Г): ${m.width}×${m.height}×${m.depth} мм | Деталей: ${m.partsCount} шт.`
+          )
+        ];
+        autoAssemblyData = {
+          fileName: `${parseRes.fileName} (Модули сборки)`,
+          fileSize: file.size,
+          uploadedAt: nowTimestamp,
+          fileContent: modLines.join('\n')
+        };
+      }
+
       const rawUpdated: ProductionOrder = {
         ...order,
         totalAreaM2: parseRes.totalAreaM2,
@@ -223,20 +248,47 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
         birkaData: {
           fileName: parseRes.fileName,
           fileHash: parseRes.fileHash,
-          uploadedAt: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('ru-RU'),
+          uploadedAt: nowTimestamp,
+          isUnifiedBazisXml: parseRes.isUnifiedBazisXml,
+          projectMeta: parseRes.projectMeta,
           details: parseRes.details,
           materialGroups: parseRes.materialGroups,
           allEdges: parseRes.allEdges
-        }
+        },
+        ...(parseRes.extractedHardware && parseRes.extractedHardware.items.length > 0
+          ? {
+              hardwareData: {
+                fileName: `${parseRes.fileName} (Авто из XML)`,
+                fileHash: parseRes.fileHash,
+                uploadedAt: nowTimestamp,
+                items: parseRes.extractedHardware.items,
+                totalItemsCount: parseRes.extractedHardware.totalItemsCount,
+                totalQuantity: parseRes.extractedHardware.totalQuantity,
+                categoriesSummary: parseRes.extractedHardware.categoriesSummary
+              }
+            }
+          : {}),
+        ...(parseRes.isUnifiedBazisXml && partsWithDrilling > 0
+          ? {
+              cncFilesData: {
+                uploadedAt: `${nowTimestamp} (из XML)`,
+                totalFilesCount: partsWithDrilling,
+                files: parseRes.details
+                  .filter(d => (d.holesCount || 0) > 0 || (d.cncPattern?.grooves?.length || 0) > 0)
+                  .map(d => ({
+                    fileName: `${d.labelNumber}_${d.name}.xml`,
+                    fileText: `BAZIS_XML_PATTERN:${d.labelNumber}`
+                  }))
+              }
+            }
+          : {}),
+        ...(autoAssemblyData ? { assemblyFileData: autoAssemblyData } : {})
       };
 
-      const { updatedOrder, analysis } = applyOrderRequirementsAnalysis(rawUpdated, settings);
+      const { updatedOrder } = applyOrderRequirementsAnalysis(rawUpdated, settings);
 
       onUpdateOrder(updatedOrder);
       playSoundEffect('success');
-      if (analysis.hasExcludedStages && analysis.notificationText) {
-        alert(analysis.notificationText);
-      }
       if (parseRes.materialGroups.length > 0) {
         setSelectedMaterial(parseRes.materialGroups[0].materialName);
       }
@@ -877,20 +929,38 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
                   Прикрепленные файлы и спецификации заказа
                 </h4>
                 
+                {order.birkaData?.isUnifiedBazisXml && (
+                  <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50 border border-emerald-200/80 flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                        <Sparkles className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-black text-emerald-950">
+                          Загружен единый XML-проект Базис-Мебельщик ({order.birkaData.fileName})
+                        </div>
+                        <div className="text-[11px] text-emerald-800 font-medium">
+                          Автоматически распознаны: детали ({order.partsCount} шт.), кромки, точная 3D-присадка ({order.birkaData.projectMeta?.totalHolesCount || 0} отв., пазов: {order.birkaData.projectMeta?.totalGroovesCount || 0}), модули ({order.birkaData.projectMeta?.modulesCount || 0} шт.) и фурнитура ({order.hardwareData?.totalItemsCount || 0} поз.)
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  {/* 1. Birka File Card */}
+                  {/* 1. Birka / Unified Bazis XML File Card */}
                   <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-200/80 flex flex-col justify-between gap-3">
                     <div className="flex items-start gap-2.5">
                       <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 mt-0.5">
                         <FileText className="w-4 h-4" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Файл Бирок / Раскроя</div>
+                        <div className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Единый XML Базис / Бирки</div>
                         <h5 className="font-bold text-slate-900 text-xs truncate">
-                          {order.birkaData ? order.birkaData.fileName : 'Бирки не прикреплены'}
+                          {order.birkaData ? order.birkaData.fileName : 'Спецификация не прикреплена'}
                         </h5>
                         <p className="text-[10px] text-slate-500 mt-0.5">
-                          {order.birkaData ? `Деталей: ${order.birkaData.details.length} шт.` : '.bir, .csv, .zip'}
+                          {order.birkaData ? `Деталей: ${order.birkaData.details.length} поз. (${order.partsCount || 0} шт.)` : '.xml (Базис всё-в-одном), .xlsx, .bir, .csv'}
                         </p>
                       </div>
                     </div>
@@ -898,10 +968,10 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
                     <div className="flex items-center gap-2 pt-1 border-t border-slate-200/60">
                       <label className="flex-1 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer text-center">
                         <Upload className="w-3 h-3" />
-                        <span>{order.birkaData ? 'Заменить' : '+ Загрузить'}</span>
+                        <span>{order.birkaData ? 'Заменить XML / Бирки' : '+ Загрузить XML / Бирки'}</span>
                         <input
                           type="file"
-                          accept=".bir,.brx,.csv,.tsv,.txt,.dbf,.zip,.xlsx,.xls"
+                          accept=".xml,.bir,.brx,.csv,.tsv,.txt,.dbf,.zip,.xlsx,.xls"
                           onChange={handleFileUpload}
                           className="hidden"
                           disabled={isUploading}
@@ -1217,15 +1287,31 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
                                     )}
                                   </td>
                                   <td className="px-4 py-3 text-right">
-                                    <button
-                                      type="button"
-                                      onClick={() => setDefectTargetDetail(item)}
-                                      className="px-2.5 py-1 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] border border-rose-200 transition-colors flex items-center gap-1 ml-auto cursor-pointer"
-                                      title="Зафиксировать брак детали и отправить в переделку"
-                                    >
-                                      <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
-                                      <span>Брак</span>
-                                    </button>
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => setActive3DDrillDetail(item)}
+                                        className="px-2.5 py-1 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] border border-indigo-200 transition-colors flex items-center gap-1 cursor-pointer"
+                                        title="Открыть 3D схему и чертеж присадки детали"
+                                      >
+                                        <Factory className="w-3.5 h-3.5 text-indigo-600" />
+                                        <span>3D Схема</span>
+                                        {(item.holesCount || 0) > 0 && (
+                                          <span className="px-1 py-0.2 rounded bg-indigo-200/80 text-indigo-900 text-[9px] font-black">
+                                            {item.holesCount}
+                                          </span>
+                                        )}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setDefectTargetDetail(item)}
+                                        className="px-2.5 py-1 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] border border-rose-200 transition-colors flex items-center gap-1 cursor-pointer"
+                                        title="Зафиксировать брак детали и отправить в переделку"
+                                      >
+                                        <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
+                                        <span>Брак</span>
+                                      </button>
+                                    </div>
                                   </td>
                                 </tr>
                               );
@@ -1610,6 +1696,19 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
             onUpdateOrder(updatedMainOrder);
             setDefectTargetDetail(null);
           }}
+        />
+      )}
+
+      {/* 3D / 2D ESKD CNC Drill Viewer Modal */}
+      {active3DDrillDetail && (
+        <CNC3DDrillViewerModal
+          isOpen={!!active3DDrillDetail}
+          onClose={() => setActive3DDrillDetail(null)}
+          detail={active3DDrillDetail}
+          orderNumber={order.orderNumber}
+          orderTitle={order.projectName || order.clientName}
+          stageName="Карта присадки и кромления (Базис XML)"
+          showOnlyEdgeHolesDefault={settings?.showOnlyEdgeHolesOnDrillViewer ?? false}
         />
       )}
     </div>

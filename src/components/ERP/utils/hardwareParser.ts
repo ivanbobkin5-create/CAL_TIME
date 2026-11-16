@@ -349,6 +349,206 @@ export function parseTableRowsToHardware(
   return Array.from(itemsMap.values());
 }
 
+// Extract Hardware & Fasteners from a unified Bazis-Mebelshik <Проект><Изделие> XML string
+export function extractBazisXmlHardware(xmlText: string): OrderHardwareItem[] {
+  if (!xmlText || !xmlText.includes('<Изделие>')) return [];
+
+  const aggMap = new Map<string, {
+    name: string;
+    article: string;
+    unit: string;
+    category: string;
+    quantity: number;
+    moduleBreakdown: Map<string, number>;
+  }>();
+
+  const addHardwareEntry = (
+    rawName: string,
+    rawArticle: string,
+    rawUnit: string,
+    qty: number,
+    moduleLabel: string
+  ) => {
+    const cleanName = (rawName || '').trim();
+    if (!cleanName || cleanName.length < 2) return;
+    const lower = cleanName.toLowerCase();
+    // Skip sheet/edge materials or virtual placeholders
+    if (
+      lower.includes('лдсп') ||
+      lower.includes('хдф') ||
+      lower.includes('двп') ||
+      lower.includes('кромка ') ||
+      lower.includes('пластмасса прозрачная') ||
+      lower === 'наполнение' ||
+      lower === 'корпус'
+    ) {
+      return;
+    }
+
+    const cleanArt = (rawArticle || '').trim();
+    const cleanUnit = (rawUnit || '').trim() || 'шт';
+    const validQty = !isNaN(qty) && qty > 0 ? qty : 1;
+    const key = `${cleanName.toLowerCase()}|||${cleanArt.toLowerCase()}`;
+
+    const existing = aggMap.get(key);
+    if (existing) {
+      existing.quantity = Math.round((existing.quantity + validQty) * 100) / 100;
+      if (moduleLabel) {
+        existing.moduleBreakdown.set(
+          moduleLabel,
+          Math.round(((existing.moduleBreakdown.get(moduleLabel) || 0) + validQty) * 100) / 100
+        );
+      }
+      if (!existing.article && cleanArt) existing.article = cleanArt;
+    } else {
+      const modMap = new Map<string, number>();
+      if (moduleLabel) modMap.set(moduleLabel, Math.round(validQty * 100) / 100);
+      aggMap.set(key, {
+        name: cleanName,
+        article: cleanArt,
+        unit: cleanUnit,
+        category: detectHardwareCategory(cleanName, cleanArt),
+        quantity: Math.round(validQty * 100) / 100,
+        moduleBreakdown: modMap
+      });
+    }
+  };
+
+  if (typeof DOMParser !== 'undefined') {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(xmlText, 'text/xml');
+      const getDirectChildText = (el: Element, tagName: string): string => {
+        for (let i = 0; i < el.children.length; i++) {
+          if (el.children[i].tagName === tagName) {
+            return (el.children[i].textContent || '').trim();
+          }
+        }
+        return '';
+      };
+      const getDirectChild = (el: Element, tagName: string): Element | null => {
+        for (let i = 0; i < el.children.length; i++) {
+          if (el.children[i].tagName === tagName) {
+            return el.children[i];
+          }
+        }
+        return null;
+      };
+
+      const walkElement = (el: Element, currentModule: string) => {
+        const tag = el.tagName;
+        let activeModule = currentModule;
+
+        if (tag === 'Сборка' || tag === 'Блок') {
+          const isUnit = getDirectChildText(el, 'СборочнаяEдиница') === 'Y';
+          const sbName = getDirectChildText(el, 'Наименование');
+          const sbCode = getDirectChildText(el, 'Обозначение') || getDirectChildText(el, 'Позиция');
+          if (isUnit && sbName) {
+            activeModule = sbCode ? `${sbCode} ${sbName}` : sbName;
+          }
+
+          // Check <ДополнительныеМатериалы> on <Сборка>/<Блок>
+          const dopEl = getDirectChild(el, 'ДополнительныеМатериалы');
+          if (dopEl) {
+            for (let i = 0; i < dopEl.children.length; i++) {
+              const matEl = dopEl.children[i];
+              if (matEl.tagName === 'Материал') {
+                const mName = getDirectChildText(matEl, 'Наименование');
+                const mCode = getDirectChildText(matEl, 'Код');
+                const mQty = parseFloat(getDirectChildText(matEl, 'Количество').replace(',', '.')) || 1;
+                const mUnit = getDirectChildText(matEl, 'ЕдИзм') || getDirectChildText(matEl, 'ЕдИзмСМодели') || 'шт';
+                addHardwareEntry(mName, mCode, mUnit, mQty, activeModule);
+              }
+            }
+          }
+
+          // Check leaf <Сборка> for plastic legs "Опоры 100"
+          const listEl = getDirectChild(el, 'СписокЭлементов');
+          if ((!listEl || listEl.children.length === 0) && /^опор[аы]\s*\d+/i.test(sbName)) {
+            const qty = (parseFloat(getDirectChildText(el, 'Количество').replace(',', '.')) || 1) * 2;
+            addHardwareEntry(`Опора мебельная регулируемая (${sbName})`, '', 'шт', qty, activeModule);
+          }
+
+          if (listEl) {
+            for (let i = 0; i < listEl.children.length; i++) {
+              walkElement(listEl.children[i], activeModule);
+            }
+          }
+          return;
+        }
+
+        if (tag === 'Объект') {
+          const objType = getDirectChildText(el, 'ТипОбъекта');
+          const objName = getDirectChildText(el, 'Наименование');
+          const objCode = getDirectChildText(el, 'Код');
+          const objQty = parseFloat(getDirectChildText(el, 'Количество').replace(',', '.')) || 1;
+
+          // Check <ДополнительныеМатериалы> on <Объект>
+          const dopEl = getDirectChild(el, 'ДополнительныеМатериалы');
+          if (dopEl) {
+            for (let i = 0; i < dopEl.children.length; i++) {
+              const matEl = dopEl.children[i];
+              if (matEl.tagName === 'Материал') {
+                const mName = getDirectChildText(matEl, 'Наименование');
+                const mCode = getDirectChildText(matEl, 'Код');
+                const mQty = parseFloat(getDirectChildText(matEl, 'Количество').replace(',', '.')) || 1;
+                const mUnit = getDirectChildText(matEl, 'ЕдИзм') || getDirectChildText(matEl, 'ЕдИзмСМодели') || 'шт';
+                addHardwareEntry(mName, mCode, mUnit, mQty, activeModule);
+              }
+            }
+          }
+
+          if (objType === 'Фурнитура' || objType === 'Сборка') {
+            const mainMatEl = getDirectChild(el, 'ОсновнойМатериал');
+            const matName = mainMatEl ? getDirectChildText(mainMatEl, 'Наименование') : '';
+            const matCode = mainMatEl ? getDirectChildText(mainMatEl, 'Код') : '';
+            const matUnit = mainMatEl
+              ? (getDirectChildText(mainMatEl, 'ЕдИзм') || getDirectChildText(mainMatEl, 'ЕдИзмСМодели') || 'шт')
+              : 'шт';
+            const matQty = mainMatEl
+              ? (parseFloat(getDirectChildText(mainMatEl, 'Количество').replace(',', '.')) || objQty)
+              : objQty;
+
+            const finalName = matName || objName;
+            const finalCode = matCode || objCode;
+            if (finalName) {
+              addHardwareEntry(finalName, finalCode, matUnit, matQty, activeModule);
+            }
+          }
+        }
+
+        for (let i = 0; i < el.children.length; i++) {
+          walkElement(el.children[i], activeModule);
+        }
+      };
+
+      const izdelie = doc.getElementsByTagName('Изделие')[0] || doc.documentElement;
+      if (izdelie) {
+        walkElement(izdelie, '');
+      }
+    } catch (e) {
+      console.warn('DOMParser Bazis XML hardware fallback:', e);
+    }
+  }
+
+  return Array.from(aggMap.values()).map((entry, idx) => {
+    const breakdownParts: string[] = [];
+    entry.moduleBreakdown.forEach((q, mod) => {
+      breakdownParts.push(`${mod}: ${q} ${entry.unit}`);
+    });
+    return {
+      id: `hw-bazis-${idx + 1}-${Math.random().toString(36).substring(2, 6)}`,
+      name: entry.name,
+      article: entry.article || undefined,
+      quantity: Math.max(1, Math.round(entry.quantity * 100) / 100),
+      unit: entry.unit || 'шт',
+      category: entry.category,
+      packedQuantity: 0,
+      notes: breakdownParts.length > 0 ? breakdownParts.join(' | ') : undefined
+    };
+  });
+}
+
 // Main parser function for Files
 export async function parseHardwareFile(
   file: File,
@@ -376,33 +576,40 @@ export async function parseHardwareFile(
     rawTextPreview = decoded.text.substring(0, 1000);
 
     if (fileName.endsWith('.xml') || decoded.text.trim().startsWith('<?xml') || decoded.text.trim().startsWith('<')) {
-      // Basic XML item extraction
-      const rows: string[][] = [];
-      const tagRegex = /<(?:item|part|element|row|позиция|деталь|фурнитура)[\s>]([\s\S]*?)<\/(?:item|part|element|row|позиция|деталь|фурнитура)>/gi;
-      let match;
-      while ((match = tagRegex.exec(decoded.text)) !== null) {
-        const block = match[1];
-        const nameMatch = block.match(/<(?:name|наименование|название)>([^<]+)<\//i);
-        const qtyMatch = block.match(/<(?:count|quantity|кол-во|количество)>([^<]+)<\//i);
-        const artMatch = block.match(/<(?:code|article|арт|артикул)>([^<]+)<\//i);
-        const unitMatch = block.match(/<(?:unit|ед)>([^<]+)<\//i);
-        const catMatch = block.match(/<(?:category|group|группа)>([^<]+)<\//i);
-
-        if (nameMatch) {
-          rows.push([
-            nameMatch[1].trim(),
-            qtyMatch ? qtyMatch[1].trim() : '1',
-            artMatch ? artMatch[1].trim() : '',
-            unitMatch ? unitMatch[1].trim() : 'шт',
-            catMatch ? catMatch[1].trim() : ''
-          ]);
-        }
+      // 1. Check if this is a unified Bazis-Mebelshik <Проект><Изделие> XML
+      if (decoded.text.includes('<Изделие>') && decoded.text.includes('<СписокЭлементов>')) {
+        items = extractBazisXmlHardware(decoded.text);
       }
-      if (rows.length > 0) {
-        items = parseTableRowsToHardware([
-          ['Наименование', 'Количество', 'Артикул', 'Ед. изм.', 'Категория'],
-          ...rows
-        ], customMapping);
+
+      // 2. Basic XML item extraction fallback
+      if (items.length === 0) {
+        const rows: string[][] = [];
+        const tagRegex = /<(?:item|part|element|row|позиция|деталь|фурнитура)[\s>]([\s\S]*?)<\/(?:item|part|element|row|позиция|деталь|фурнитура)>/gi;
+        let match;
+        while ((match = tagRegex.exec(decoded.text)) !== null) {
+          const block = match[1];
+          const nameMatch = block.match(/<(?:name|наименование|название)>([^<]+)<\//i);
+          const qtyMatch = block.match(/<(?:count|quantity|кол-во|количество)>([^<]+)<\//i);
+          const artMatch = block.match(/<(?:code|article|арт|артикул)>([^<]+)<\//i);
+          const unitMatch = block.match(/<(?:unit|ед)>([^<]+)<\//i);
+          const catMatch = block.match(/<(?:category|group|группа)>([^<]+)<\//i);
+
+          if (nameMatch) {
+            rows.push([
+              nameMatch[1].trim(),
+              qtyMatch ? qtyMatch[1].trim() : '1',
+              artMatch ? artMatch[1].trim() : '',
+              unitMatch ? unitMatch[1].trim() : 'шт',
+              catMatch ? catMatch[1].trim() : ''
+            ]);
+          }
+        }
+        if (rows.length > 0) {
+          items = parseTableRowsToHardware([
+            ['Наименование', 'Количество', 'Артикул', 'Ед. изм.', 'Категория'],
+            ...rows
+          ], customMapping);
+        }
       }
     }
 

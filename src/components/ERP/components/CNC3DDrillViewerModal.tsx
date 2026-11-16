@@ -42,13 +42,18 @@ export function classifyHoleFace(
   if (hole.toolId === 'T103') return 'top';
   if (hole.toolId === 'T104') return 'bottom';
 
-  // Coordinate-based edge detection
-  if (hole.y <= 5) return 'bottom'; // L1
-  if (hole.y >= patternWidth - 5) return 'top'; // L2
-  if (hole.x <= 5) return 'left'; // W1
-  if (hole.x >= patternLength - 5) return 'right'; // W2
+  // If hole explicitly specifies face 'A' or 'B' (e.g., from Bazis XML НаправлениеZ), keep it on that face
+  if (hole.face === 'A' || hole.face === 'B') {
+    return hole.face;
+  }
 
-  return hole.face === 'B' ? 'B' : 'A';
+  // Coordinate-based edge detection fallback
+  if (hole.y <= 1) return 'bottom'; // L1
+  if (hole.y >= patternWidth - 1) return 'top'; // L2
+  if (hole.x <= 1) return 'left'; // W1
+  if (hole.x >= patternLength - 1) return 'right'; // W2
+
+  return 'A';
 }
 
 interface Bazis2DBlueprintSvgProps {
@@ -335,6 +340,38 @@ export const Bazis2DBlueprintSvg: React.FC<Bazis2DBlueprintSvgProps> = ({
           >
             {pWidth}
           </text>
+
+          {/* Render Grooves (Пазы) on 2D Blueprint */}
+          {(pattern.grooves || []).map((gr, gIdx) => {
+            const gx1 = panelX + gr.x1;
+            const gy1 = panelY + (pWidth - gr.y1);
+            const gx2 = panelX + gr.x2;
+            const gy2 = panelY + (pWidth - gr.y2);
+            const gw = Math.max(4, gr.width || 4);
+            return (
+              <g key={gr.id || `groove-${gIdx}`}>
+                <line
+                  x1={gx1}
+                  y1={gy1}
+                  x2={gx2}
+                  y2={gy2}
+                  stroke="#f59e0b"
+                  strokeWidth={gw}
+                  strokeDasharray="8,4"
+                  opacity="0.85"
+                />
+                <text
+                  x={(gx1 + gx2) / 2 + 8}
+                  y={(gy1 + gy2) / 2 - 6}
+                  fill="#b45309"
+                  fontSize="11"
+                  fontWeight="bold"
+                >
+                  Паз {gr.width}×{gr.depth}мм
+                </text>
+              </g>
+            );
+          })}
 
           {/* Render Holes with Numbers and Crosshairs */}
           {holes.map((hole, idx) => {

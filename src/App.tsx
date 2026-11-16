@@ -718,24 +718,40 @@ const resolveUserProfilePriority = (
   portalInfo?: { b24Name?: string; b24Photo?: string; b24UserId?: string }
 ) => {
   const base = baseUser || {};
-  const existingName = String(base.displayName || base.name || "").trim();
+  const lowerEmail = String(base.email || "").toLowerCase().trim();
+  const isIvanUser =
+    lowerEmail === "lk.ivanbobkin@yandex.ru" ||
+    lowerEmail === "lk.ivanbobkin@gmail.com" ||
+    String(base.uid || "") === "5adbd3b0-f5b4-41d3-8abb-d106e2a3d013" ||
+    String(base.uid || "") === "ac9add56-d366-406f-9dd6-4767e2d08724";
+
+  let existingName = String(base.name || base.displayName || "").trim();
+  if (!isIvanUser && existingName.toLowerCase().includes("бобкин")) {
+    existingName = String(base.name || "").trim();
+    if (existingName.toLowerCase().includes("бобкин")) existingName = "";
+  }
   const existingPhoto = String(base.photoURL || base.avatarUrl || base.photo || "").trim();
 
-  const hasCustomName = Boolean(base.customNameSet && existingName);
+  const hasCustomName = Boolean((base.customNameSet || existingName) && existingName);
   const hasCustomPhoto =
     Boolean(base.customPhotoSet && existingPhoto) || existingPhoto.startsWith("data:image/");
 
-  const nextB24Name = String(portalInfo?.b24Name || base.b24Name || "").trim();
-  const nextB24Photo = String(portalInfo?.b24Photo || base.b24PhotoURL || "").trim();
+  let nextB24Name = String(portalInfo?.b24Name || base.b24Name || "").trim();
+  let nextB24Photo = String(portalInfo?.b24Photo || base.b24PhotoURL || "").trim();
 
-  const effectiveName = hasCustomName ? existingName : (nextB24Name || existingName);
+  if (!isIvanUser && nextB24Name.toLowerCase().includes("бобкин")) {
+    nextB24Name = "";
+    nextB24Photo = "";
+  }
+
+  const effectiveName = existingName || nextB24Name;
   const effectivePhoto = hasCustomPhoto ? existingPhoto : (nextB24Photo || existingPhoto);
 
   return {
     ...base,
     ...(nextB24Name ? { b24Name: nextB24Name } : {}),
     ...(nextB24Photo ? { b24PhotoURL: nextB24Photo } : {}),
-    ...(portalInfo?.b24UserId ? { b24UserId: String(portalInfo.b24UserId) } : {}),
+    ...(portalInfo?.b24UserId && (isIvanUser || portalInfo.b24UserId !== "1") ? { b24UserId: String(portalInfo.b24UserId) } : {}),
     customNameSet: hasCustomName,
     customPhotoSet: hasCustomPhoto,
     ...(effectiveName ? { displayName: effectiveName, name: effectiveName } : {}),
@@ -36584,7 +36600,7 @@ export default function App() {
         const b24Phone = ctx.userPhone || "";
 
         let userUid = resolvedServerUser?.uid || (userData?.uid && !userData.uid.startsWith('b24_') ? userData.uid : "") || `b24_${ctx.domain || "user"}`;
-        if (userUid.startsWith('b24_') && (b24Email.includes("ivanbobkin") || b24Email.includes("yandex.ru") || ctx.domain?.includes("mebelfaktura"))) {
+        if (userUid.startsWith('b24_') && (b24Email === "lk.ivanbobkin@yandex.ru" || b24Email === "lk.ivanbobkin@gmail.com")) {
           userUid = "5adbd3b0-f5b4-41d3-8abb-d106e2a3d013";
         }
 
@@ -37577,11 +37593,16 @@ export default function App() {
       
       if (cachedUserRaw) {
         const parsedUser = typeof cachedUserRaw === 'string' ? JSON.parse(cachedUserRaw) : cachedUserRaw;
-        setUserData(parsedUser);
-        setIsAuthenticated(true);
-        if (parsedUser.role) setUserRole(parsedUser.role);
-        if (isUserSuperAdmin(parsedUser) || isSuperAdminEmail(savedEmail || parsedUser.email)) {
-          setIsAppAdmin(true);
+        // Only hydrate from cache if it matches the currently logged in savedUid
+        if (!savedUid || parsedUser?.uid === savedUid) {
+          if (!parsedUser.displayName && parsedUser.name) parsedUser.displayName = parsedUser.name;
+          if (!parsedUser.name && parsedUser.displayName) parsedUser.name = parsedUser.displayName;
+          setUserData(parsedUser);
+          setIsAuthenticated(true);
+          if (parsedUser.role) setUserRole(parsedUser.role);
+          if (isUserSuperAdmin(parsedUser) || isSuperAdminEmail(savedEmail || parsedUser.email)) {
+            setIsAppAdmin(true);
+          }
         }
       }
 
@@ -37610,7 +37631,14 @@ export default function App() {
           if (userRes.ok) {
             const docData = await userRes.json();
             if (docData && (docData.uid || docData.email || docData.companyId)) {
-              const fullUserData = { uid: savedUid, email: savedEmail || docData.email || "", ...docData };
+              const resolvedDisplayName = docData.name || docData.displayName || "";
+              const fullUserData = {
+                uid: savedUid,
+                email: savedEmail || docData.email || "",
+                ...docData,
+                name: resolvedDisplayName,
+                displayName: resolvedDisplayName,
+              };
               setUserData(fullUserData);
               const essentialUser = serializeEssentialUser(fullUserData);
               safeAuthStorageSet('auth_user', essentialUser);
@@ -37618,9 +37646,9 @@ export default function App() {
               
               const rawRole = docData.accessLevel || docData.role || 'manager';
               const resolvedRole = ['admin', 'supervisor', 'manager', 'worker'].includes(rawRole) ? rawRole : (
-                rawRole.toLowerCase().includes('админ') ? 'admin' :
+                rawRole.toLowerCase().includes('админ') || rawRole.toLowerCase().includes('директор') ? 'admin' :
                 rawRole.toLowerCase().includes('руковод') ? 'supervisor' : 
-                rawRole.toLowerCase().includes('сотрудник') ? 'worker' : 'manager'
+                rawRole.toLowerCase().includes('сотрудник') || rawRole.toLowerCase().includes('распил') || rawRole.toLowerCase().includes('кром') || rawRole.toLowerCase().includes('сбор') ? 'worker' : 'manager'
               );
               setUserRole(resolvedRole);
               auth.currentUser = fullUserData;
@@ -37644,7 +37672,19 @@ export default function App() {
                       productionFormat: normalizedType === "Мебельное производство" ? "own" : "contract"
                     };
                     setCompanyData(fullCompData);
-                    setUserData(prev => ({ ...prev, companyId: effectiveCompanyId, role: 'admin', isOwner: true }));
+                    const isCompanyOwner = Boolean(
+                      docData.isOwner ||
+                      compData?.ownerUid === savedUid ||
+                      (compData?.ownerEmail && String(compData.ownerEmail).toLowerCase() === String(fullUserData.email).toLowerCase()) ||
+                      String(fullUserData.email).toLowerCase() === "lk.ivanbobkin@yandex.ru" ||
+                      String(fullUserData.email).toLowerCase() === "lk.ivanbobkin@gmail.com"
+                    );
+                    setUserData(prev => ({
+                      ...prev,
+                      companyId: effectiveCompanyId,
+                      role: prev?.role || resolvedRole,
+                      isOwner: isCompanyOwner
+                    }));
                     safeAuthStorageSet('auth_company', serializeEssentialCompany(fullCompData));
                     try {
                       localStorage.setItem(`erp_session_${effectiveCompanyId}`, JSON.stringify({

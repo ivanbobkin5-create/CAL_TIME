@@ -191,6 +191,9 @@ export default function RootApp() {
     }
 
     const authUser = await response.json();
+    localStorage.removeItem('auth_user');
+    localStorage.removeItem('currentUser');
+    localStorage.removeItem('auth_company');
     localStorage.setItem('auth_uid', authUser.uid);
     localStorage.setItem('auth_email', authUser.email);
     if (authUser.token) {

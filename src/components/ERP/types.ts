@@ -182,13 +182,35 @@ export interface ProductionOrder {
     fileName: string;
     fileHash?: string;
     uploadedAt?: string;
+    isUnifiedBazisXml?: boolean;
+    projectMeta?: {
+      orderNumber?: string;
+      projectName?: string;
+      article?: string;
+      modulesCount?: number;
+      totalHolesCount?: number;
+      totalGroovesCount?: number;
+      modulesList?: Array<{
+        pos: string;
+        code: string;
+        name: string;
+        width: number;
+        height: number;
+        depth: number;
+        partsCount: number;
+      }>;
+    };
     details: Array<{
       id: string;
       labelNumber: string; // № детали / Позиция
       orderNumber?: string;
+      partCode?: string;   // Код детали из Базис (например, КС254.014)
+      moduleName?: string; // Модуль / Сборочная единица
       name: string;
       length: number;
       width: number;
+      cutLength?: number;  // Длина детали без облицовки (пильный размер)
+      cutWidth?: number;   // Ширина детали без облицовки (пильный размер)
       thickness: number;
       material: string;
       quantity: number;
@@ -196,11 +218,13 @@ export interface ProductionOrder {
       edgeL2?: string;
       edgeW1?: string;
       edgeW2?: string;
+      texture?: string;
       notes?: string;
       barcode?: string;
       holesEnd?: number;   // Количество отверстий в торец
       holesFace?: number;  // Количество отверстий в пласть
       holesCount?: number; // Общее количество отверстий
+      cncPattern?: any;    // Точная карта присадки и пазов (CNCDrillPattern) из XML
     }>;
     materialGroups?: Array<{
       materialName: string;

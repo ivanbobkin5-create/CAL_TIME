@@ -327,6 +327,9 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
         throw new Error('Файл не содержит распознанных деталей или пуст');
       }
 
+      const nowTimestamp = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('ru-RU');
+      const partsWithDrilling = parseRes.details.filter(d => (d.holesCount || 0) > 0 || (d.cncPattern?.grooves?.length || 0) > 0).length;
+
       const rawUpdated: ProductionOrder = {
         ...localOrder,
         totalAreaM2: parseRes.totalAreaM2,
@@ -335,21 +338,47 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
         birkaData: {
           fileName: parseRes.fileName,
           fileHash: parseRes.fileHash,
-          uploadedAt: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('ru-RU'),
+          uploadedAt: nowTimestamp,
+          isUnifiedBazisXml: parseRes.isUnifiedBazisXml,
+          projectMeta: parseRes.projectMeta,
           details: parseRes.details,
           materialGroups: parseRes.materialGroups,
           allEdges: parseRes.allEdges
-        }
+        },
+        ...(parseRes.extractedHardware && parseRes.extractedHardware.items.length > 0
+          ? {
+              hardwareData: {
+                fileName: `${parseRes.fileName} (Авто из XML)`,
+                fileHash: parseRes.fileHash,
+                uploadedAt: nowTimestamp,
+                items: parseRes.extractedHardware.items,
+                totalItemsCount: parseRes.extractedHardware.totalItemsCount,
+                totalQuantity: parseRes.extractedHardware.totalQuantity,
+                categoriesSummary: parseRes.extractedHardware.categoriesSummary
+              }
+            }
+          : {}),
+        ...(parseRes.isUnifiedBazisXml && partsWithDrilling > 0
+          ? {
+              cncFilesData: {
+                uploadedAt: `${nowTimestamp} (из XML)`,
+                totalFilesCount: partsWithDrilling,
+                files: parseRes.details
+                  .filter(d => (d.holesCount || 0) > 0 || (d.cncPattern?.grooves?.length || 0) > 0)
+                  .map(d => ({
+                    fileName: `${d.labelNumber}_${d.name}.xml`,
+                    fileText: `BAZIS_XML_PATTERN:${d.labelNumber}`
+                  }))
+              }
+            }
+          : {})
       };
 
-      const { updatedOrder, analysis } = applyOrderRequirementsAnalysis(rawUpdated, settings);
+      const { updatedOrder } = applyOrderRequirementsAnalysis(rawUpdated, settings);
 
       setLocalOrder(updatedOrder);
       onUpdateOrder(updatedOrder);
       playSoundEffect('success');
-      if (analysis.hasExcludedStages && analysis.notificationText) {
-        alert(analysis.notificationText);
-      }
       if (parseRes.materialGroups.length > 0) {
         setSelectedMaterial(parseRes.materialGroups[0].materialName);
       }
@@ -1277,10 +1306,10 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
               <div className="flex justify-center">
                 <label className="px-6 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-2 cursor-pointer">
                   <Upload className="w-4 h-4" />
-                  <span>{isUploading ? 'Обработка файла...' : 'Выбрать файл спецификации (.xlsx, .csv, .txt)'}</span>
+                  <span>{isUploading ? 'Обработка файла...' : 'Выбрать единый XML Базис или файл спецификации (.xml, .xlsx, .csv, .txt)'}</span>
                   <input
                     type="file"
-                    accept=".xlsx,.xls,.csv,.txt,.tsv"
+                    accept=".xml,.bir,.brx,.xlsx,.xls,.csv,.txt,.tsv,.zip"
                     className="hidden"
                     onChange={handleFileUpload}
                     disabled={isUploading}

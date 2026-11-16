@@ -236,21 +236,40 @@ export function parseCNCFile(
  * Synthesizes a realistic drill pattern for a detail if no CNC file was uploaded yet
  */
 export function generatePatternForDetail(detail: any): CNCDrillPattern {
-  const length = Math.max(100, Number(detail.height || detail.length || 800));
-  const width = Math.max(100, Number(detail.width || 400));
-  const thickness = Math.max(10, Number(detail.thickness || 16));
+  if (detail?.cncPattern && Array.isArray(detail.cncPattern.holes)) {
+    return detail.cncPattern as CNCDrillPattern;
+  }
+
+  const length = Math.max(50, Number(detail.height || detail.length || 800));
+  const width = Math.max(50, Number(detail.width || 400));
+  const thickness = Math.max(3, Number(detail.thickness || 16));
   const name = String(detail.name || '').toLowerCase();
 
   const holes: CNCDrillHole[] = [];
   const grooves: CNCGroove[] = [];
 
-  // Parse Edging Sides from detail.edgeSides or detail edge strings
+  const parseEdgeThick = (edgeStr?: string, fallback = 1.0): number => {
+    if (!edgeStr) return fallback;
+    const m = edgeStr.match(/(\d+(?:[.,]\d+)?)\s*[xх*×]/i) || edgeStr.match(/(\d+(?:[.,]\d+)?)/);
+    if (m) {
+      const val = parseFloat(m[1].replace(',', '.'));
+      if (!isNaN(val) && val > 0 && val <= 10) return val;
+    }
+    return fallback;
+  };
+
+  // Parse Edging Sides from detail.edgeL1..W2 or detail.edgeSides
   const edgeSides = detail.edgeSides || {};
+  const hasL1 = !!(detail.edgeL1 || edgeSides.left || edgeSides.L1);
+  const hasL2 = !!(detail.edgeL2 || edgeSides.right || edgeSides.L2);
+  const hasW1 = !!(detail.edgeW1 || edgeSides.top || edgeSides.W1);
+  const hasW2 = !!(detail.edgeW2 || edgeSides.bottom || edgeSides.W2);
+
   const edges: Record<'L1' | 'L2' | 'W1' | 'W2', CNCEdgeSide> = {
-    L1: { side: 'L1', name: 'Длина 1 (L1)', thickness: 1.0, color: '#10b981', hasEdge: !!edgeSides.left || !!edgeSides.L1 },
-    L2: { side: 'L2', name: 'Длина 2 (L2)', thickness: 1.0, color: '#10b981', hasEdge: !!edgeSides.right || !!edgeSides.L2 },
-    W1: { side: 'W1', name: 'Ширина 1 (W1)', thickness: 0.4, color: '#3b82f6', hasEdge: !!edgeSides.top || !!edgeSides.W1 },
-    W2: { side: 'W2', name: 'Ширина 2 (W2)', thickness: 0.4, color: '#3b82f6', hasEdge: !!edgeSides.bottom || !!edgeSides.W2 }
+    L1: { side: 'L1', name: detail.edgeL1 || 'Длина 1 (L1)', thickness: parseEdgeThick(detail.edgeL1, 1.0), color: '#10b981', hasEdge: hasL1 },
+    L2: { side: 'L2', name: detail.edgeL2 || 'Длина 2 (L2)', thickness: parseEdgeThick(detail.edgeL2, 1.0), color: '#10b981', hasEdge: hasL2 },
+    W1: { side: 'W1', name: detail.edgeW1 || 'Ширина 1 (W1)', thickness: parseEdgeThick(detail.edgeW1, 0.4), color: '#3b82f6', hasEdge: hasW1 },
+    W2: { side: 'W2', name: detail.edgeW2 || 'Ширина 2 (W2)', thickness: parseEdgeThick(detail.edgeW2, 0.4), color: '#3b82f6', hasEdge: hasW2 }
   };
 
   // Synthesize realistic drilling based on furniture component type:
