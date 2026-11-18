@@ -295,6 +295,8 @@ export const ERPApp: React.FC<ERPAppProps> = ({
   const [syncStatusText, setSyncStatusText] = useState<string | null>(null);
   const [orderSource, setOrderSource] = useState<string>('projects');
   const [selectedOrderForWorkspace, setSelectedOrderForWorkspace] = useState<ProductionOrder | null>(null);
+  const selectedOrderForWorkspaceRef = useRef<ProductionOrder | null>(selectedOrderForWorkspace);
+  selectedOrderForWorkspaceRef.current = selectedOrderForWorkspace;
   const [workspaceStageId, setWorkspaceStageId] = useState<ProductionStageId | null>(null);
   const [activeProductionStageId, setActiveProductionStageId] = useState<ProductionStageId | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -1958,6 +1960,8 @@ export const ERPApp: React.FC<ERPAppProps> = ({
 
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (selectedOrderForWorkspaceRef.current) return;
+
       const target = e.target as HTMLElement | null;
       const activeEl = document.activeElement as HTMLElement | null;
 
@@ -2502,6 +2506,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
           {selectedOrderForWorkspace && !selectedOrderForWorkspace.isDeleted ? (
             <ERPOrderWorkspaceView 
               order={selectedOrderForWorkspace}
+              companyId={company?.id || aliasOrId}
               initialStageId={workspaceStageId}
               settings={settings}
               currentUser={{

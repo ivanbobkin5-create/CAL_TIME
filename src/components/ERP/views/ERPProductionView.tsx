@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPEmployee, ERPCompanySettings } from '../types';
 import { formatDeadlineDate, getNextRequiredStage, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl, getSmartOrderDisplay } from '../utils';
-import { getStageTaskReadinessInfo, getStageScannedPiecesCount, isStageRequiredForOrder } from '../utils/stageReadiness';
+import { getStageTaskReadinessInfo, getStageScannedPiecesCount, isStageRequiredForOrder, getOrderPackagingCompleteness } from '../utils/stageReadiness';
 import { ERPOrderDetailsModal } from './ERPOrderDetailsModal';
 import { ERPDispatchView } from './ERPDispatchView';
 import { MobileCameraScannerModal } from '../components/MobileCameraScannerModal';
@@ -206,20 +206,20 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
     const targetIdx = STAGE_ORDER.indexOf(stageId);
 
     // Specific condition for shipping stage:
-    // Order MUST NOT appear on shipping stage until packaging is completed!
+    // Shipping task may remain visible/openable for scheduling or inspection,
+    // while actual shipment execution is strictly blocked until all packages & details are packed.
     if (stageId === 'shipping') {
-      const isPackingDone = 
+      const packagingCheck = getOrderPackagingCompleteness(order);
+      const isPackingDone =
+        order.stageProgress?.packing?.status === 'done' ||
+        (packagingCheck.hasAnyPackages && packagingCheck.isComplete);
+
+      return (
         order.currentStage === 'shipping' ||
         order.currentStage === 'ready' ||
-        order.stageProgress?.packing?.status === 'done' ||
-        !!order.forcedStageCompletions?.packing ||
-        ((order.packages || []).length > 0 && (order.partsCount || 0) > 0 && 
-         (order.packages || []).reduce((sum, p) => sum + (p.parts?.length || 0), 0) >= (order.partsCount || 0));
-
-      if (!isPackingDone) {
-        return false;
-      }
-      return order.currentStage === 'shipping' || order.currentStage === 'ready' || !!order.stagePlannedDates?.['shipping'];
+        !!order.stagePlannedDates?.['shipping'] ||
+        isPackingDone
+      );
     }
 
     // If order's current stage has already moved beyond stageId in the production flow,

@@ -30,7 +30,8 @@ import {
   getDetailPackagingReadiness, 
   getDetailPackagingPieceStats,
   arePrecedingStagesCompleted, 
-  getPackagingReadinessStats 
+  getPackagingReadinessStats,
+  getOrderPackagingCompleteness
 } from '../utils/stageReadiness';
 import { printPackageLabelDirect } from '../utils/packageLabelPrinter';
 
@@ -688,8 +689,9 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
       return;
     }
 
-    if (!isAllDetailsPacked || rawUnpackedDetails.length > 0) {
-      showFeedback(`Невозможно завершить участок: еще не упаковано ${rawUnpackedDetails.length} деталей!`, 'error');
+    const packagingCheck = getOrderPackagingCompleteness(order);
+    if (!packagingCheck.isComplete || !isAllDetailsPacked || rawUnpackedDetails.length > 0) {
+      showFeedback(`Невозможно завершить участок: ${packagingCheck.reason}`, 'error');
       return;
     }
 

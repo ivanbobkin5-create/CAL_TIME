@@ -23,11 +23,13 @@ import {
   Sparkles,
   Check,
   Building2,
-  Box
+  Box,
+  Lock
 } from 'lucide-react';
 import { ProductionOrder, ERPEmployee, ERPCompanySettings, OrderPackage, DriverInfo } from '../types';
 import { MobileCameraScannerModal } from '../components/MobileCameraScannerModal';
 import { speakText, normalizeBarcodeScan, extractPackageCodeFromScan, printShippingActDocumentA4 } from '../utils';
+import { getOrderPackagingCompleteness } from '../utils/stageReadiness';
 
 interface ERPDispatchViewProps {
   orders: ProductionOrder[];
@@ -60,6 +62,7 @@ export const ERPDispatchView: React.FC<ERPDispatchViewProps> = ({
       order.currentStage === 'shipping' || 
       order.currentStage === 'ready' || 
       order.currentStage === 'packing' ||
+      !!order.stagePlannedDates?.['shipping'] ||
       order.status === 'shipped' ||
       order.status === 'completed' ||
       (order.packages && order.packages.length > 0);
@@ -83,7 +86,7 @@ export const ERPDispatchView: React.FC<ERPDispatchViewProps> = ({
   });
 
   // Calculate statistics
-  const readyOrdersCount = orders.filter(o => !o.isDeleted && (o.currentStage === 'shipping' || o.currentStage === 'ready') && o.status !== 'shipped' && o.status !== 'completed').length;
+  const readyOrdersCount = orders.filter(o => !o.isDeleted && (o.currentStage === 'shipping' || o.currentStage === 'ready' || !!o.stagePlannedDates?.['shipping']) && o.status !== 'shipped' && o.status !== 'completed').length;
   const shippedTodayCount = orders.filter(o => !o.isDeleted && o.shippedAt && o.shippedAt.startsWith(new Date().toISOString().split('T')[0])).length;
   const totalPackagesToShip = dispatchOrders.reduce((sum, o) => sum + (o.packages?.length || 0), 0);
 
@@ -192,7 +195,8 @@ export const ERPDispatchView: React.FC<ERPDispatchViewProps> = ({
           {dispatchOrders.map((order) => {
             const pkgs = order.packages || [];
             const shippedPkgsCount = pkgs.filter(p => p.isShipped).length;
-            const isFullyScanned = pkgs.length > 0 && shippedPkgsCount === pkgs.length;
+            const packagingCheck = getOrderPackagingCompleteness(order);
+            const isFullyScanned = packagingCheck.isComplete && pkgs.length > 0 && shippedPkgsCount === pkgs.length;
             const isShipped = order.status === 'shipped' || order.status === 'completed';
 
             return (
@@ -201,6 +205,8 @@ export const ERPDispatchView: React.FC<ERPDispatchViewProps> = ({
                 className={`bg-white rounded-3xl border transition-all duration-200 p-5 shadow-sm flex flex-col justify-between ${
                   isShipped
                     ? 'border-emerald-200 bg-emerald-50/20'
+                    : !packagingCheck.isComplete
+                    ? 'border-rose-200/90 hover:border-rose-300'
                     : isFullyScanned
                     ? 'border-blue-300 ring-2 ring-blue-500/20'
                     : 'border-slate-200/80 hover:border-slate-300'
@@ -216,6 +222,8 @@ export const ERPDispatchView: React.FC<ERPDispatchViewProps> = ({
                     <span className={`px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 ${
                       isShipped
                         ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                        : !packagingCheck.isComplete
+                        ? 'bg-rose-100 text-rose-800 border border-rose-300'
                         : isFullyScanned
                         ? 'bg-blue-100 text-blue-800 border border-blue-300'
                         : 'bg-amber-100 text-amber-800 border border-amber-300'
@@ -223,6 +231,10 @@ export const ERPDispatchView: React.FC<ERPDispatchViewProps> = ({
                       {isShipped ? (
                         <>
                           <CheckCircle2 className="w-3.5 h-3.5" /> Отгружен
+                        </>
+                      ) : !packagingCheck.isComplete ? (
+                        <>
+                          <Lock className="w-3.5 h-3.5" /> Упаковка неполная
                         </>
                       ) : isFullyScanned ? (
                         <>
@@ -266,6 +278,18 @@ export const ERPDispatchView: React.FC<ERPDispatchViewProps> = ({
                           }`}
                           style={{ width: `${Math.round((shippedPkgsCount / pkgs.length) * 100)}%` }}
                         />
+                      </div>
+                    )}
+
+                    {/* Packaging completeness status warning when incomplete */}
+                    {!isShipped && !packagingCheck.isComplete && (
+                      <div className="p-2 rounded-xl bg-rose-50 border border-rose-200 text-[11px] font-bold text-rose-800 flex items-start gap-1.5">
+                        <Lock className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                        <span>
+                          {!packagingCheck.hasAnyPackages
+                            ? 'Упаковки не созданы — отгрузка заблокирована'
+                            : `Упаковано ${packagingCheck.totalPackedPieces} из ${packagingCheck.totalRequiredPieces} шт. деталей — отгрузить нельзя`}
+                        </span>
                       </div>
                     )}
 
@@ -446,8 +470,14 @@ const ERPDispatchWorkspaceModal: React.FC<ERPDispatchWorkspaceModalProps> = ({
     setScanInput('');
   };
 
+  const packagingCheck = getOrderPackagingCompleteness(order);
+
   // Toggle all packages scanned manually
   const handleScanAllManually = () => {
+    if (pkgs.length === 0) {
+      setScanMessage({ type: 'error', text: 'В заказе нет ни одной упаковки для отметки!' });
+      return;
+    }
     const allCodes = pkgs.map(p => p.code);
     setScannedCodes(allCodes);
     const updatedPkgs = pkgs.map(p => ({ ...p, isShipped: true, shippedAt: new Date().toISOString() }));
@@ -456,8 +486,32 @@ const ERPDispatchWorkspaceModal: React.FC<ERPDispatchWorkspaceModalProps> = ({
     speakText('Все места приняты');
   };
 
+  // Driver list from employees (only employees with driver role/position)
+  const driverEmployees = employees.filter(e => 
+    e.role === 'driver' || 
+    e.productionRole?.toLowerCase().includes('водитель') || 
+    (e as any).position?.toLowerCase().includes('водитель')
+  );
+
+  const totalPkgsCount = pkgs.length;
+  const scannedCount = pkgs.filter(p => p.isShipped || scannedCodes.includes(p.code) || scannedCodes.includes(p.id)).length;
+  const isAllScanned = totalPkgsCount > 0 && scannedCount === totalPkgsCount;
+  const canShip = packagingCheck.isComplete && totalPkgsCount > 0 && isAllScanned;
+
   // Complete shipment
   const handleConfirmShipment = () => {
+    if (!packagingCheck.isComplete) {
+      setScanMessage({ type: 'error', text: `⛔ Отгрузка невозможна: ${packagingCheck.reason}` });
+      speakText('Отгрузка заблокирована');
+      return;
+    }
+
+    if (pkgs.length === 0 || !isAllScanned) {
+      setScanMessage({ type: 'error', text: `⛔ Отгрузить нельзя: отсканированы не все упаковки (${scannedCount} из ${totalPkgsCount}).` });
+      speakText('Отсканируйте все упаковки');
+      return;
+    }
+
     const updatedPkgs = pkgs.map(p => ({ ...p, isShipped: true, shippedAt: p.shippedAt || new Date().toISOString() }));
     
     const updatedOrder: ProductionOrder = {
@@ -484,17 +538,6 @@ const ERPDispatchWorkspaceModal: React.FC<ERPDispatchWorkspaceModalProps> = ({
     onPrintAct(updatedOrder);
     onClose();
   };
-
-  // Driver list from employees (only employees with driver role/position)
-  const driverEmployees = employees.filter(e => 
-    e.role === 'driver' || 
-    e.productionRole?.toLowerCase().includes('водитель') || 
-    (e as any).position?.toLowerCase().includes('водитель')
-  );
-
-  const totalPkgsCount = pkgs.length;
-  const scannedCount = scannedCodes.length;
-  const isAllScanned = totalPkgsCount > 0 && scannedCount === totalPkgsCount;
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
@@ -585,10 +628,42 @@ const ERPDispatchWorkspaceModal: React.FC<ERPDispatchWorkspaceModalProps> = ({
               </div>
             )}
 
+            {/* Strict Packaging Completeness Blocker */}
+            {!packagingCheck.isComplete && (
+              <div className="p-4 bg-rose-50 rounded-2xl border-2 border-rose-300 text-rose-950 text-xs space-y-2">
+                <div className="flex items-start gap-2.5">
+                  <Lock className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-black">Отгрузка заблокирована: не созданы все упаковки заказа</div>
+                    <div className="font-semibold text-rose-800 mt-0.5">{packagingCheck.reason}</div>
+                  </div>
+                </div>
+                {packagingCheck.missingDetails.length > 0 && (
+                  <div className="bg-white/80 rounded-xl p-2.5 border border-rose-200 max-h-32 overflow-y-auto space-y-1">
+                    {packagingCheck.missingDetails.slice(0, 10).map((d) => (
+                      <div key={d.id} className="flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-slate-800 truncate">
+                          {d.labelNumber ? `№${d.labelNumber} ` : ''}{d.name}
+                        </span>
+                        <span className="font-mono font-black text-rose-700 shrink-0">
+                          упаковано {d.packedQty} из {d.requiredQty} шт.
+                        </span>
+                      </div>
+                    ))}
+                    {packagingCheck.missingDetails.length > 10 && (
+                      <div className="text-[11px] font-bold text-rose-700">
+                        + еще {packagingCheck.missingDetails.length - 10} позиций не упакованы
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Packages Checklist List */}
             {pkgs.length === 0 ? (
               <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 text-xs font-medium">
-                ⚠️ У этого заказа нет сформированных упаковок в системе. Вы можете сразу назначить водителя и распечатать Акт приема-передачи.
+                ⛔ У этого заказа нет сформированных упаковок. Перейдите на участок «Упаковка и склад» и упакуйте все детали перед отгрузкой.
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
@@ -740,10 +815,12 @@ const ERPDispatchWorkspaceModal: React.FC<ERPDispatchWorkspaceModalProps> = ({
 
             <button
               onClick={handleConfirmShipment}
-              className="px-5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-lg shadow-emerald-600/30 flex items-center gap-2 transition-all cursor-pointer"
+              disabled={!canShip}
+              title={!canShip ? (packagingCheck.isComplete ? 'Отсканируйте все упаковки перед отгрузкой' : packagingCheck.reason) : 'Подтвердить и отгрузить заказ'}
+              className="px-5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-extrabold text-xs shadow-lg shadow-emerald-600/30 flex items-center gap-2 transition-all cursor-pointer"
             >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Подтвердить и отгрузить заказ</span>
+              {!packagingCheck.isComplete ? <Lock className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+              <span>{!packagingCheck.isComplete ? 'Отгрузка заблокирована' : 'Подтвердить и отгрузить заказ'}</span>
             </button>
           </div>
         </div>

@@ -74,20 +74,32 @@ export function getNextRequiredStage(
 
 export function getStageNameRussian(stageId?: string | null): string {
   if (!stageId) return 'Завершение';
+  const key = String(stageId).trim().toLowerCase();
   const stageMap: Record<string, string> = {
     queue: 'Очередь / Запуск',
     cutting: 'Распил',
+    raskroy: 'Распил',
     edging: 'Кромкооблицовка',
-    cnc: 'Присадка ЧПУ',
+    kromka: 'Кромкооблицовка',
+    cnc: 'Присадка (ЧПУ)',
+    prisadka: 'Присадка (ЧПУ)',
+    drilling: 'Присадка (ЧПУ)',
+    milling: 'Присадка (ЧПУ)',
     facades: 'Фасады',
+    fasady: 'Фасады',
     assembly: 'Сборка',
+    sborka: 'Сборка',
     kitting: 'Комплектовка',
+    completing: 'Комплектовка',
     qc: 'Контроль ОТК',
     packing: 'Упаковка',
+    packaging: 'Упаковка',
+    upakovka: 'Упаковка',
     ready: 'Готово к отгрузке',
-    shipping: 'Отгрузка'
+    shipping: 'Отгрузка',
+    otgruzka: 'Отгрузка'
   };
-  return stageMap[stageId] || stageId;
+  return stageMap[key] || stageId;
 }
 
 // Russian ЙЦУКЕН to English QWERTY key mapping dictionary
@@ -292,18 +304,130 @@ export function playSoundEffect(type: 'success' | 'alert' | 'error' = 'success')
 }
 
 /**
+ * Voice cache & selector for natural human-sounding Russian female voices
+ */
+let cachedVoices: SpeechSynthesisVoice[] = [];
+let voiceListenerAttached = false;
+
+function refreshSpeechVoices(): SpeechSynthesisVoice[] {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return [];
+  const list = window.speechSynthesis.getVoices();
+  if (list && list.length > 0) {
+    cachedVoices = list;
+  }
+  if (!voiceListenerAttached && typeof window.speechSynthesis.addEventListener === 'function') {
+    voiceListenerAttached = true;
+    window.speechSynthesis.addEventListener('voiceschanged', () => {
+      const updated = window.speechSynthesis.getVoices();
+      if (updated && updated.length > 0) {
+        cachedVoices = updated;
+      }
+    });
+  }
+  return cachedVoices.length > 0 ? cachedVoices : (list || []);
+}
+
+// Warm up voices list early on browser load
+if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+  try {
+    refreshSpeechVoices();
+  } catch {
+    // ignore
+  }
+}
+
+function selectPreferredRussianFemaleVoice(): { voice: SpeechSynthesisVoice | null; isNeural: boolean } {
+  const voices = refreshSpeechVoices();
+  if (!voices || voices.length === 0) {
+    return { voice: null, isNeural: false };
+  }
+
+  const ruVoices = voices.filter(v => (v.lang || '').toLowerCase().startsWith('ru'));
+  if (ruVoices.length === 0) {
+    return { voice: null, isNeural: false };
+  }
+
+  // Exclude clearly male or 1990s-style formant/robotic synthesizers when better choices exist
+  const maleOrRoboticRegex = /\b(pavel|dmitry|yuri|maxim|alexander|aleksandr|nikolai|anton|artem|boris|espeak|festival|mbrola)\b/i;
+
+  const scoreVoice = (v: SpeechSynthesisVoice): number => {
+    const name = (v.name || '').toLowerCase();
+    let score = 0;
+
+    if (maleOrRoboticRegex.test(name)) {
+      score -= 100;
+    }
+
+    // Highest priority: Modern neural / cloud natural Russian female voices
+    if (name.includes('svetlana') && (name.includes('natural') || name.includes('online'))) score += 120;
+    else if (name.includes('svetlana')) score += 95;
+    if (name.includes('google') && (name.includes('рус') || name.includes('ru'))) score += 110;
+    if (name.includes('yandex') || name.includes('alice') || name.includes('alyss') || name.includes('tatyana') || name.includes('jane') || name.includes('oksana')) score += 105;
+    if (name.includes('milena') && (name.includes('premium') || name.includes('enhanced'))) score += 100;
+    else if (name.includes('milena')) score += 85;
+    if (name.includes('katya') && (name.includes('premium') || name.includes('enhanced'))) score += 98;
+    else if (name.includes('katya')) score += 82;
+    if (name.includes('natural') || name.includes('neural') || name.includes('wavenet')) score += 60;
+    if (name.includes('online')) score += 45;
+    if (name.includes('enhanced') || name.includes('premium')) score += 40;
+
+    // Female name hints
+    if (/(irina|elena|anna|olga|maria|natalia|victoria|female|женск)/i.test(name)) score += 35;
+
+    // Legacy local Windows SAPI Irina is usable as fallback, but lower than neural Google/Edge/Apple voices
+    if (name.includes('microsoft irina') && v.localService) score -= 15;
+    if (!v.localService) score += 15; // Cloud/network TTS voices sound dramatically more human than OS fallback
+
+    return score;
+  };
+
+  const ranked = [...ruVoices].sort((a, b) => scoreVoice(b) - scoreVoice(a));
+  const best = ranked[0] || null;
+  if (!best) return { voice: null, isNeural: false };
+
+  const bestName = (best.name || '').toLowerCase();
+  const isNeural =
+    bestName.includes('natural') ||
+    bestName.includes('neural') ||
+    bestName.includes('online') ||
+    bestName.includes('google') ||
+    bestName.includes('enhanced') ||
+    bestName.includes('premium') ||
+    bestName.includes('yandex') ||
+    !best.localService;
+
+  return { voice: best, isNeural };
+}
+
+/**
  * Text-To-Speech assistant voice synthesizer (Web Speech API)
+ * Automatically prefers natural human-sounding female Russian voices.
  */
 export function speakText(text: string) {
   if (isVoiceMuted()) return;
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     try {
-      window.speechSynthesis.cancel();
+      const synth = window.speechSynthesis;
+      synth.cancel();
+      if (synth.paused) {
+        synth.resume();
+      }
+
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'ru-RU';
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
-      window.speechSynthesis.speak(utterance);
+
+      const { voice, isNeural } = selectPreferredRussianFemaleVoice();
+      if (voice) {
+        utterance.voice = voice;
+      }
+
+      // Neural voices sound best near 1.0 pitch and natural conversational pace (0.98);
+      // Legacy local voices benefit from slight softening and unhurried pacing.
+      utterance.rate = isNeural ? 0.98 : 0.95;
+      utterance.pitch = isNeural ? 1.0 : 1.04;
+      utterance.volume = 1.0;
+
+      synth.speak(utterance);
     } catch (e) {
       console.warn('Speech synthesis error:', e);
     }

@@ -877,8 +877,6 @@ export const CNC3DDrillViewerModal: React.FC<CNC3DDrillViewerModalProps> = ({
     controls.update();
   };
 
-  if (!isOpen) return null;
-
   // Count holes by category
   const allHolesCount = pattern.holes.length;
   const edgeHolesCount = pattern.holes.filter(h => ['top', 'bottom', 'left', 'right'].includes(classifyHoleFace(h, pattern.width, pattern.length))).length;
@@ -906,6 +904,20 @@ export const CNC3DDrillViewerModal: React.FC<CNC3DDrillViewerModalProps> = ({
 
     return items;
   }, [displayPattern.holes, pattern.width, pattern.length]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onEsc);
+    return () => window.removeEventListener('keydown', onEsc);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-2 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">

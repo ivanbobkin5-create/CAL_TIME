@@ -29,13 +29,31 @@ export function printArchiveOrderPassport(order: ProductionOrder, employees: ERP
   const stageNames: Record<string, string> = {
     queue: 'Очередь / Планирование',
     cutting: 'Распил',
+    raskroy: 'Распил',
     edging: 'Кромкооблицовка',
-    milling: 'Присадка / ЧПУ',
+    kromka: 'Кромкооблицовка',
+    cnc: 'Присадка (ЧПУ)',
+    prisadka: 'Присадка (ЧПУ)',
+    drilling: 'Присадка (ЧПУ)',
+    milling: 'Присадка (ЧПУ)',
     facades: 'Фасады',
+    fasady: 'Фасады',
     assembly: 'Сборка',
+    sborka: 'Сборка',
     kitting: 'Комплектовка фурнитуры',
+    completing: 'Комплектовка фурнитуры',
+    qc: 'Контроль ОТК',
+    packing: 'Упаковка деталей',
     packaging: 'Упаковка деталей',
-    shipping: 'Отгрузка водителю'
+    upakovka: 'Упаковка деталей',
+    shipping: 'Отгрузка водителю',
+    otgruzka: 'Отгрузка водителю',
+    ready: 'Готово к отгрузке'
+  };
+
+  const getStageLabel = (id?: string) => {
+    const key = String(id || '').trim().toLowerCase();
+    return stageNames[key] || id || '—';
   };
 
   // Build packages HTML
@@ -158,7 +176,7 @@ export function printArchiveOrderPassport(order: ProductionOrder, employees: ERP
   const stagesHtml = Object.entries(stageProgress).map(([stId, stData]: [string, any]) => {
     return `
       <tr style="border-bottom: 1px solid #e2e8f0;">
-        <td style="padding: 4px 6px; font-weight: bold;">${stageNames[stId] || stId}</td>
+        <td style="padding: 4px 6px; font-weight: bold;">${getStageLabel(stId)}</td>
         <td style="padding: 4px 6px; color: ${stData?.status === 'done' ? '#166534' : '#0369a1'}; font-weight: bold;">
           ${stData?.status === 'done' ? '✓ Выполнен' : (stData?.status === 'in_progress' ? 'В работе' : 'Ожидание')}
         </td>
@@ -187,7 +205,7 @@ export function printArchiveOrderPassport(order: ProductionOrder, employees: ERP
           ${workLogs.map(log => `
             <tr style="border-bottom: 1px solid #e2e8f0;">
               <td style="padding: 4px 6px; font-weight: bold;">${log.employeeName || 'Сотрудник'}</td>
-              <td style="padding: 4px 6px;">${stageNames[log.stageId] || log.stageId}</td>
+              <td style="padding: 4px 6px;">${getStageLabel(log.stageId)}</td>
               <td style="padding: 4px 6px; font-family: monospace;">${formatDateTimeSafe(log.startTime)}</td>
               <td style="padding: 4px 6px; font-family: monospace;">${formatDateTimeSafe(log.endTime, 'В процессе')}</td>
               <td style="padding: 4px 6px; text-align: right; font-weight: bold;">

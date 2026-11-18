@@ -34,7 +34,11 @@ import {
   UserX,
   ShieldAlert,
   ArrowRight,
-  Lock
+  Lock,
+  Eye,
+  EyeOff,
+  KeyRound,
+  CheckCheck
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee, MaterialResidual } from '../types';
 import { parseBirkaFile, BirkaParseResult, BirkaDetail, consolidateDetails } from '../utils/birkaParser';
@@ -54,6 +58,7 @@ import { CNC3DDrillViewerModal } from '../components/CNC3DDrillViewerModal';
 
 interface ERPOrderWorkspaceViewProps {
   order: ProductionOrder;
+  companyId?: string;
   initialStageId?: ProductionStageId | null;
   settings?: ERPCompanySettings;
   currentUser?: ERPEmployee | any | null;
@@ -124,6 +129,7 @@ const STAGE_METADATA: Record<ProductionStageId, { name: string; shortName: strin
 
 export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   order,
+  companyId,
   initialStageId,
   settings,
   currentUser,
@@ -213,12 +219,26 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   const [showShiftRequiredModal, setShowShiftRequiredModal] = useState<boolean>(false);
   const [defectTargetDetail, setDefectTargetDetail] = useState<any | null>(null);
   const [active3DDrillModalDetail, setActive3DDrillModalDetail] = useState<any | null>(null);
+  const active3DDrillModalDetailRef = useRef<any | null>(null);
+  const setActive3DDrillDetailSynced = (detail: any | null) => {
+    active3DDrillModalDetailRef.current = detail;
+    setActive3DDrillModalDetail(detail);
+  };
+  const [showMarkAllPasswordModal, setShowMarkAllPasswordModal] = useState<boolean>(false);
+  const [markAllPasswordInput, setMarkAllPasswordInput] = useState<string>('');
+  const [showMarkAllPassword, setShowMarkAllPassword] = useState<boolean>(false);
+  const [markAllPasswordError, setMarkAllPasswordError] = useState<string | null>(null);
+  const [isVerifyingMarkAllPassword, setIsVerifyingMarkAllPassword] = useState<boolean>(false);
+  const [markAllScope, setMarkAllScope] = useState<'all_materials' | 'current_material'>('all_materials');
   const [isIdentityConfirmed, setIsIdentityConfirmed] = useState<boolean>(false);
 
   const scannerInputRef = useRef<HTMLInputElement | null>(null);
+  const scanInputRef = useRef<string>(scanInput);
+  scanInputRef.current = scanInput;
   const barcodeBufferRef = useRef<string>('');
   const lastKeyTimeRef = useRef<number>(0);
   const bufferTimeoutRef = useRef<any>(null);
+  const handleScanCodeRef = useRef<(code: string) => void>(() => {});
 
   // Local optimistic order state for zero-latency scanning updates
   const [localOrder, setLocalOrder] = useState<ProductionOrder>(order);
@@ -239,6 +259,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     setLocalOrder(prev => {
       if (prev.id !== order.id) {
         localOrderRef.current = order;
+        setActive3DDrillDetailSynced(null);
         return order;
       }
 
@@ -600,19 +621,23 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       return;
     }
 
-    // 3D Drill Scheme Workflow (if enabled in settings: 1st scan opens scheme, 2nd scan completes item. If disabled: 1-scan instant completion)
-    const is3DEnabled = settings?.enable3DDrillViewer !== false;
-    const is3DOpenForThisPart = active3DDrillModalDetail && active3DDrillModalDetail.id === foundPart.id;
+    // 3D Drill Scheme Workflow ONLY on Присадка / ЧПУ stage (if enabled in settings: 1st scan opens scheme, 2nd scan completes item; on other stages like cutting/edging, 1st scan completes immediately)
+    const isPrisadkaStage = currentStage === 'cnc' || (currentStage as string) === 'prisadka' || (currentStage as string) === 'drilling';
+    const is3DEnabled = isPrisadkaStage && settings?.enable3DDrillViewer !== false;
+    const currentOpen3DPart = active3DDrillModalDetailRef.current || active3DDrillModalDetail;
+    const is3DOpenForThisPart = !!(currentOpen3DPart && currentOpen3DPart.id === foundPart.id);
 
     if (is3DEnabled && !is3DOpenForThisPart) {
-      setActive3DDrillModalDetail(foundPart);
+      setActive3DDrillDetailSynced(foundPart);
       playSoundEffect('alert');
       setScanSuccessMsg(`🔍 1-й Скан: Открыта схема детали №${foundPart.labelNumber} «${foundPart.name}». Вторичный скан зафиксирует её в списке!`);
       return;
     }
 
-    // 2nd Scan: Close 3D Modal and record detail completion
-    setActive3DDrillModalDetail(null);
+    // 2nd Scan (or non-3D stage): Close 3D Modal if open and record detail completion
+    if (currentOpen3DPart) {
+      setActive3DDrillDetailSynced(null);
+    }
 
     // Mark +1 piece instance as scanned
     const nextInstanceNumber = currentPartScannedCount + 1;
@@ -714,6 +739,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     }
   };
 
+  handleScanCodeRef.current = handleScanCode;
+
   // Global Barcode & QR Scanner Listener
   useEffect(() => {
     if (currentStage === 'kitting' || currentStage === 'packing' || currentStage === 'shipping') {
@@ -743,13 +770,14 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
 
       if (e.key === 'Enter') {
         const rawCode = isScannerInput
-          ? (scannerInputRef.current?.value || scanInput).trim()
-          : (barcodeBufferRef.current || scannerInputRef.current?.value || scanInput).trim();
+          ? (scannerInputRef.current?.value || scanInputRef.current).trim()
+          : (barcodeBufferRef.current || scannerInputRef.current?.value || scanInputRef.current).trim();
         const bufferedCode = normalizeBarcodeScan(rawCode);
         if (bufferedCode) {
           e.preventDefault();
+          e.stopPropagation();
           barcodeBufferRef.current = '';
-          handleScanCode(bufferedCode);
+          handleScanCodeRef.current(bufferedCode);
         }
         return;
       }
@@ -782,7 +810,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       window.removeEventListener('keydown', handleGlobalKeyDown, true);
       if (bufferTimeoutRef.current) clearTimeout(bufferTimeoutRef.current);
     };
-  }, [showCameraScannerModal, selectedMaterial, currentMaterialDetails, currentStage]);
+  }, [showCameraScannerModal, currentStage]);
 
   // Toggle single detail scanned status manually
   const toggleDetailScanned = (detail: BirkaDetail) => {
@@ -899,6 +927,156 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
           materialName: mat
         });
       }
+    }
+  };
+
+  const isMarkAllAllowedStage =
+    currentStage === 'cutting' ||
+    (currentStage as string) === 'raskroy' ||
+    currentStage === 'edging' ||
+    (currentStage as string) === 'kromka';
+
+  // Password-verified Mark All handler for Cutting and Edging stages
+  const handleConfirmMarkAllWithPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const pwd = markAllPasswordInput.trim();
+    if (!pwd) {
+      setMarkAllPasswordError('Введите пароль администратора или начальника цеха');
+      return;
+    }
+
+    setIsVerifyingMarkAllPassword(true);
+    setMarkAllPasswordError(null);
+
+    try {
+      const targetCompanyId = companyId || window.location.pathname.split('/')[2] || 'default';
+      const res = await fetch(`/api/erp/${encodeURIComponent(targetCompanyId)}/verify-manager-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pwd })
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || !data?.valid) {
+        setMarkAllPasswordError(data?.error || 'Неверный пароль администратора или начальника цеха');
+        playSoundEffect('error');
+        setIsVerifyingMarkAllPassword(false);
+        return;
+      }
+
+      const currentOrder = localOrderRef.current;
+      const targetAllDetails = consolidateDetails(currentOrder.birkaData?.details || []);
+      const filteredDetails = targetAllDetails.filter(d => {
+        if (currentStage === 'edging' || (currentStage as string) === 'kromka') {
+          if (!partNeedsEdge(d)) return false;
+        }
+        if (markAllScope === 'current_material') {
+          const dMat = d.material || 'Без указания материала';
+          return dMat === (selectedMaterial || 'Без указания материала');
+        }
+        return true;
+      });
+
+      const updatedStageScanning = { ...(currentOrder.stageScanningProgress || {}) };
+      if (!updatedStageScanning[currentStage]) {
+        updatedStageScanning[currentStage] = {};
+      }
+
+      const updatedForcedCompletions = { ...(currentOrder.forcedStageCompletions || {}) };
+      let forcedChanged = false;
+      const markedDetailIdSet = new Set<string>();
+      let newlyMarkedPieces = 0;
+
+      // Group filtered details by material
+      const detailsByMat: Record<string, BirkaDetail[]> = {};
+      for (const d of filteredDetails) {
+        const mat = d.material || 'Без указания материала';
+        if (!detailsByMat[mat]) detailsByMat[mat] = [];
+        detailsByMat[mat].push(d);
+      }
+
+      for (const [matName, matDetails] of Object.entries(detailsByMat)) {
+        const existingList = [...(updatedStageScanning[currentStage][matName]?.scannedPartIds || [])];
+        const existingSet = new Set(existingList);
+
+        for (const d of matDetails) {
+          markedDetailIdSet.add(d.id);
+          const reqQty = Math.max(1, d.quantity || 1);
+          const alreadyScanned = getScannedCountForDetail(existingList, d.id);
+          for (let inst = alreadyScanned + 1; inst <= reqQty; inst++) {
+            const candidateId = inst === 1 ? d.id : `${d.id}#${inst}`;
+            if (!existingSet.has(candidateId)) {
+              existingList.push(candidateId);
+              existingSet.add(candidateId);
+              newlyMarkedPieces++;
+            }
+          }
+        }
+
+        updatedStageScanning[currentStage][matName] = {
+          scannedPartIds: existingList,
+          isCompleted: true
+        };
+      }
+
+      // If marking all materials, ensure every material group on this stage is marked isCompleted: true
+      if (markAllScope === 'all_materials') {
+        for (const mg of (currentOrder.birkaData?.materialGroups || [])) {
+          if (!updatedStageScanning[currentStage][mg.materialName]) {
+            updatedStageScanning[currentStage][mg.materialName] = {
+              scannedPartIds: [],
+              isCompleted: true
+            };
+          } else {
+            updatedStageScanning[currentStage][mg.materialName] = {
+              ...updatedStageScanning[currentStage][mg.materialName],
+              isCompleted: true
+            };
+          }
+        }
+      }
+
+      if (markedDetailIdSet.size > 0) {
+        Object.keys(updatedForcedCompletions).forEach(stg => {
+          const prevList = updatedForcedCompletions[stg]?.unscannedPartIds;
+          if (Array.isArray(prevList) && prevList.some(id => markedDetailIdSet.has(id))) {
+            updatedForcedCompletions[stg] = {
+              ...updatedForcedCompletions[stg],
+              unscannedPartIds: prevList.filter(id => !markedDetailIdSet.has(id))
+            };
+            forcedChanged = true;
+          }
+        });
+      }
+
+      const updatedOrder: ProductionOrder = {
+        ...currentOrder,
+        currentStage: currentStage,
+        stageScanningProgress: updatedStageScanning,
+        ...(forcedChanged ? { forcedStageCompletions: updatedForcedCompletions } : {})
+      };
+
+      localOrderRef.current = updatedOrder;
+      setLocalOrder(updatedOrder);
+      onUpdateOrder(updatedOrder);
+
+      const authName = data?.authorizedBy?.name || 'Руководитель';
+      setShowMarkAllPasswordModal(false);
+      setMarkAllPasswordInput('');
+      setShowMarkAllPassword(false);
+      setMarkAllPasswordError(null);
+      setScanErrorMsg(null);
+      setScanSuccessMsg(
+        `✅ Массовая отметка выполнена (${newlyMarkedPieces > 0 ? `+${newlyMarkedPieces} шт.` : 'все детали отмечены'}) • Подтвердил: ${authName}`
+      );
+      playSoundEffect('success');
+      setTimeout(() => scannerInputRef.current?.focus(), 60);
+    } catch (err) {
+      console.error('Mark all password check failed:', err);
+      setMarkAllPasswordError('Не удалось проверить пароль. Попробуйте снова.');
+      playSoundEffect('error');
+    } finally {
+      setIsVerifyingMarkAllPassword(false);
     }
   };
 
@@ -1537,16 +1715,36 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                     </p>
                   </div>
 
-                  {/* Search inside parts list */}
-                  <div className="relative min-w-[200px]">
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      placeholder="Поиск по № или названию..."
-                      value={searchPartsQuery}
-                      onChange={(e) => setSearchPartsQuery(e.target.value)}
-                      className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
+                  {/* Search inside parts list & Mark All button for Cutting/Edging */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {isMarkAllAllowedStage && !isStageFullyScanned && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMarkAllPasswordInput('');
+                          setMarkAllPasswordError(null);
+                          setShowMarkAllPassword(false);
+                          setMarkAllScope('all_materials');
+                          setShowMarkAllPasswordModal(true);
+                        }}
+                        className="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 active:scale-95 text-amber-800 border border-amber-300 text-xs font-black flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                        title="Отметить все детали на участке (требуется пароль администратора или начальника цеха)"
+                      >
+                        <Lock className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Отметить всё</span>
+                      </button>
+                    )}
+
+                    <div className="relative min-w-[200px]">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="Поиск по № или названию..."
+                        value={searchPartsQuery}
+                        onChange={(e) => setSearchPartsQuery(e.target.value)}
+                        className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -1955,11 +2153,17 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       {active3DDrillModalDetail && (
         <CNC3DDrillViewerModal
           isOpen={!!active3DDrillModalDetail}
-          onClose={() => setActive3DDrillModalDetail(null)}
+          onClose={() => {
+            setActive3DDrillDetailSynced(null);
+            setTimeout(() => scannerInputRef.current?.focus(), 50);
+          }}
           onConfirmComplete={() => {
-            const part = active3DDrillModalDetail;
-            setActive3DDrillModalDetail(null);
-            toggleDetailScanned(part);
+            const part = active3DDrillModalDetailRef.current || active3DDrillModalDetail;
+            setActive3DDrillDetailSynced(null);
+            if (part) {
+              toggleDetailScanned(part);
+            }
+            setTimeout(() => scannerInputRef.current?.focus(), 50);
           }}
           detail={active3DDrillModalDetail}
           orderNumber={order.orderNumber}
@@ -1967,6 +2171,127 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
           stageName={stageMeta.name}
           showOnlyEdgeHolesDefault={settings?.showOnlyEdgeHolesOnDrillViewer ?? false}
         />
+      )}
+
+      {/* Password Confirmation Modal for "Отметить всё" on Cutting / Edging */}
+      {showMarkAllPasswordModal && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full shadow-2xl border border-slate-200 animate-scale-in space-y-5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3.5">
+                <div className="w-11 h-11 rounded-2xl bg-amber-100 border border-amber-200 flex items-center justify-center text-amber-700 shrink-0 shadow-xs">
+                  <KeyRound className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 leading-tight">
+                    Отметить всё ({stageMeta.shortName})
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Для массовой отметки без сканирования введите пароль администратора или начальника цеха.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMarkAllPasswordModal(false);
+                  setMarkAllPasswordError(null);
+                  setTimeout(() => scannerInputRef.current?.focus(), 50);
+                }}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {(localOrder.birkaData?.materialGroups?.length || 0) > 1 && (
+              <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-slate-100 border border-slate-200 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setMarkAllScope('all_materials')}
+                  className={`py-2 px-3 rounded-xl font-bold transition-all cursor-pointer ${
+                    markAllScope === 'all_materials'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  Весь заказ ({missingPartsCount} шт. ост.)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMarkAllScope('current_material')}
+                  className={`py-2 px-3 rounded-xl font-bold transition-all cursor-pointer truncate ${
+                    markAllScope === 'current_material'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                  title={selectedMaterial}
+                >
+                  Текущий материал
+                </button>
+              </div>
+            )}
+
+            <form onSubmit={handleConfirmMarkAllWithPassword} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 block">
+                  Пароль администратора / начальника цеха
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type={showMarkAllPassword ? 'text' : 'password'}
+                    autoFocus
+                    value={markAllPasswordInput}
+                    onChange={(e) => {
+                      setMarkAllPasswordInput(e.target.value);
+                      if (markAllPasswordError) setMarkAllPasswordError(null);
+                    }}
+                    placeholder="Введите пароль..."
+                    className="w-full pl-10 pr-10 py-3 rounded-2xl border border-slate-300 text-sm font-medium text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowMarkAllPassword(prev => !prev)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+                    tabIndex={-1}
+                  >
+                    {showMarkAllPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {markAllPasswordError && (
+                <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs font-bold text-rose-700 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{markAllPasswordError}</span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMarkAllPasswordModal(false);
+                    setMarkAllPasswordError(null);
+                    setTimeout(() => scannerInputRef.current?.focus(), 50);
+                  }}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-100 transition-all cursor-pointer"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="submit"
+                  disabled={isVerifyingMarkAllPassword}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-xs font-black shadow-lg shadow-emerald-600/25 transition-all flex items-center gap-2 cursor-pointer"
+                >
+                  <CheckCheck className="w-4 h-4" />
+                  <span>{isVerifyingMarkAllPassword ? 'Проверка...' : 'Подтвердить и отметить всё'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

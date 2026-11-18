@@ -468,6 +468,234 @@ export function getPackagingReadinessStats(order: ProductionOrder, settings?: ER
   };
 }
 
+export interface MissingPackageDetailItem {
+  id: string;
+  labelNumber: string;
+  name: string;
+  material?: string;
+  requiredQty: number;
+  packedQty: number;
+  missingQty: number;
+}
+
+export interface OrderPackagingCompleteness {
+  isComplete: boolean;
+  hasAnyPackages: boolean;
+  packagesCount: number;
+  detailPackagesCount: number;
+  kittingPackagesCount: number;
+  uncompletedPackagesCount: number;
+  totalRequiredPieces: number;
+  totalPackedPieces: number;
+  missingPiecesCount: number;
+  missingDetails: MissingPackageDetailItem[];
+  reason: string;
+}
+
+/**
+ * Strictly verify that packages are created for the order AND include 100% of all order details & pieces.
+ * Orders with missing packages or unpacked details MUST NOT be shipped.
+ */
+export function getOrderPackagingCompleteness(order: ProductionOrder): OrderPackagingCompleteness {
+  const packages = order?.packages || [];
+  const packagesCount = packages.length;
+  const hasAnyPackages = packagesCount > 0;
+  const detailPackagesCount = packages.filter(p => p.type !== 'kitting').length;
+  const kittingPackagesCount = packages.filter(p => p.type === 'kitting').length;
+  const uncompletedPackagesCount = packages.filter(p => p.isCompleted === false).length;
+
+  // Build mutable pool of packed quantities per original detail ID across all packages
+  const remainingPackedPool = new Map<string, number>();
+  let totalPartsInPackages = 0;
+
+  for (const pkg of packages) {
+    for (const part of pkg.parts || []) {
+      const qty = Math.max(1, part.quantity || 1);
+      totalPartsInPackages += qty;
+      const origId = (part as any).originalDetailId || (part.detailId || '').split('#')[0];
+      if (origId) {
+        remainingPackedPool.set(origId, (remainingPackedPool.get(origId) || 0) + qty);
+      }
+    }
+  }
+
+  const rawDetails = order?.birkaData?.details || [];
+
+  if (rawDetails.length > 0) {
+    let totalRequiredPieces = 0;
+    let totalPackedPieces = 0;
+    const missingDetails: MissingPackageDetailItem[] = [];
+
+    for (const d of rawDetails) {
+      const reqQty = Math.max(1, d.quantity || 1);
+      totalRequiredPieces += reqQty;
+
+      const availableForId = remainingPackedPool.get(d.id) || 0;
+      const packedForRow = Math.min(reqQty, availableForId);
+      remainingPackedPool.set(d.id, Math.max(0, availableForId - packedForRow));
+      totalPackedPieces += packedForRow;
+
+      if (packedForRow < reqQty) {
+        missingDetails.push({
+          id: d.id,
+          labelNumber: d.labelNumber || '',
+          name: d.name || 'Деталь',
+          material: d.material,
+          requiredQty: reqQty,
+          packedQty: packedForRow,
+          missingQty: reqQty - packedForRow
+        });
+      }
+    }
+
+    const missingPiecesCount = Math.max(0, totalRequiredPieces - totalPackedPieces);
+
+    if (!hasAnyPackages) {
+      return {
+        isComplete: false,
+        hasAnyPackages: false,
+        packagesCount: 0,
+        detailPackagesCount: 0,
+        kittingPackagesCount: 0,
+        uncompletedPackagesCount: 0,
+        totalRequiredPieces,
+        totalPackedPieces: 0,
+        missingPiecesCount: totalRequiredPieces,
+        missingDetails,
+        reason: `В заказе не создано ни одной упаковки (не упаковано ${totalRequiredPieces} из ${totalRequiredPieces} шт. деталей).`
+      };
+    }
+
+    if (uncompletedPackagesCount > 0) {
+      return {
+        isComplete: false,
+        hasAnyPackages,
+        packagesCount,
+        detailPackagesCount,
+        kittingPackagesCount,
+        uncompletedPackagesCount,
+        totalRequiredPieces,
+        totalPackedPieces,
+        missingPiecesCount,
+        missingDetails,
+        reason: `Есть незавершенные упаковки (${uncompletedPackagesCount} шт.). Запечатайте все места перед отгрузкой.`
+      };
+    }
+
+    if (missingDetails.length > 0 || missingPiecesCount > 0) {
+      return {
+        isComplete: false,
+        hasAnyPackages,
+        packagesCount,
+        detailPackagesCount,
+        kittingPackagesCount,
+        uncompletedPackagesCount,
+        totalRequiredPieces,
+        totalPackedPieces,
+        missingPiecesCount,
+        missingDetails,
+        reason: `Созданы не все упаковки: упаковано ${totalPackedPieces} из ${totalRequiredPieces} шт. (осталось ${missingPiecesCount} шт. / ${missingDetails.length} поз.).`
+      };
+    }
+
+    return {
+      isComplete: true,
+      hasAnyPackages,
+      packagesCount,
+      detailPackagesCount,
+      kittingPackagesCount,
+      uncompletedPackagesCount: 0,
+      totalRequiredPieces,
+      totalPackedPieces,
+      missingPiecesCount: 0,
+      missingDetails: [],
+      reason: `Все упаковки созданы (${packagesCount} мест) и включают все детали заказа (${totalPackedPieces}/${totalRequiredPieces} шт.).`
+    };
+  }
+
+  // Fallback when order has no detailed birka specification
+  const expectedPartsCount = Math.max(0, order?.partsCount || 0);
+
+  if (!hasAnyPackages) {
+    return {
+      isComplete: false,
+      hasAnyPackages: false,
+      packagesCount: 0,
+      detailPackagesCount: 0,
+      kittingPackagesCount: 0,
+      uncompletedPackagesCount: 0,
+      totalRequiredPieces: expectedPartsCount,
+      totalPackedPieces: 0,
+      missingPiecesCount: expectedPartsCount,
+      missingDetails: [],
+      reason: 'В заказе не создано ни одной упаковки. Сначала сформируйте упаковки.'
+    };
+  }
+
+  if (uncompletedPackagesCount > 0) {
+    return {
+      isComplete: false,
+      hasAnyPackages,
+      packagesCount,
+      detailPackagesCount,
+      kittingPackagesCount,
+      uncompletedPackagesCount,
+      totalRequiredPieces: expectedPartsCount,
+      totalPackedPieces: totalPartsInPackages,
+      missingPiecesCount: Math.max(0, expectedPartsCount - totalPartsInPackages),
+      missingDetails: [],
+      reason: `Есть незавершенные упаковки (${uncompletedPackagesCount} шт.). Запечатайте все места перед отгрузкой.`
+    };
+  }
+
+  if (expectedPartsCount > 0 && detailPackagesCount === 0 && kittingPackagesCount > 0) {
+    return {
+      isComplete: false,
+      hasAnyPackages,
+      packagesCount,
+      detailPackagesCount,
+      kittingPackagesCount,
+      uncompletedPackagesCount: 0,
+      totalRequiredPieces: expectedPartsCount,
+      totalPackedPieces: totalPartsInPackages,
+      missingPiecesCount: expectedPartsCount,
+      missingDetails: [],
+      reason: `Создана только комплектация фурнитуры, но детали заказа (${expectedPartsCount} шт.) еще не упакованы.`
+    };
+  }
+
+  if (expectedPartsCount > 0 && totalPartsInPackages > 0 && totalPartsInPackages < expectedPartsCount) {
+    const missing = expectedPartsCount - totalPartsInPackages;
+    return {
+      isComplete: false,
+      hasAnyPackages,
+      packagesCount,
+      detailPackagesCount,
+      kittingPackagesCount,
+      uncompletedPackagesCount: 0,
+      totalRequiredPieces: expectedPartsCount,
+      totalPackedPieces: totalPartsInPackages,
+      missingPiecesCount: missing,
+      missingDetails: [],
+      reason: `Упакованы не все детали заказа: ${totalPartsInPackages} из ${expectedPartsCount} шт. (осталось ${missing} шт.).`
+    };
+  }
+
+  return {
+    isComplete: true,
+    hasAnyPackages,
+    packagesCount,
+    detailPackagesCount,
+    kittingPackagesCount,
+    uncompletedPackagesCount: 0,
+    totalRequiredPieces: expectedPartsCount || totalPartsInPackages,
+    totalPackedPieces: totalPartsInPackages,
+    missingPiecesCount: 0,
+    missingDetails: [],
+    reason: `Все упаковки созданы (${packagesCount} мест).`
+  };
+}
+
 export interface DetailStageStatus {
   isAvailable: boolean; // Можно ли сканировать деталь на текущем участке
   isScannedOnCurrentStage: boolean; // Просканирована ли уже на текущем участке
@@ -720,6 +948,27 @@ export function getStageTaskReadinessInfo(
       statusText,
       readyPartsCount: packStats.readyPiecesCount,
       totalPartsCount: packStats.totalPiecesCount || totalPartsCount
+    };
+  }
+
+  // Shipping: task can be opened, but actual shipment is blocked until 100% of details are packed
+  if (stageId === 'shipping') {
+    const packCheck = getOrderPackagingCompleteness(order);
+    let statusText = '';
+    if (packCheck.isComplete) {
+      statusText = `Готов к отгрузке (${packCheck.packagesCount} упак., ${packCheck.totalPackedPieces || packCheck.totalRequiredPieces} дет.)`;
+    } else if (!packCheck.hasAnyPackages) {
+      statusText = 'Упаковки не созданы — отгрузка заблокирована';
+    } else {
+      statusText = `Упаковано ${packCheck.totalPackedPieces} из ${packCheck.totalRequiredPieces} шт. — отгрузка заблокирована`;
+    }
+
+    return {
+      isLocked: false,
+      statusText,
+      readyPartsCount: packCheck.totalPackedPieces,
+      totalPartsCount: packCheck.totalRequiredPieces || totalPartsCount,
+      blockingReason: packCheck.isComplete ? undefined : packCheck.reason
     };
   }
 

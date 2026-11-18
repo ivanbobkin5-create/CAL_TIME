@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Truck, 
   QrCode, 
@@ -16,7 +16,8 @@ import {
   X,
   Printer,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Lock
 } from 'lucide-react';
 import { ProductionOrder, OrderPackage, ERPCompanySettings, ERPEmployee, DriverInfo, ProductionStageId } from '../types';
 import { PackageLabelPrintModal } from './PackageLabelPrintModal';
@@ -24,6 +25,7 @@ import { ShippingActPrintModal } from './ShippingActPrintModal';
 import { ShippingTTNPrintModal } from './ShippingTTNPrintModal';
 import { QuickAddDriverModal } from './QuickAddDriverModal';
 import { convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, extractPackageCodeFromScan } from '../utils';
+import { getOrderPackagingCompleteness } from '../utils/stageReadiness';
 
 interface ERPShippingTabProps {
   order: ProductionOrder;
@@ -70,9 +72,15 @@ export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
   const barcodeBufferRef = useRef<string>('');
   const lastKeyTimeRef = useRef<number>(0);
 
+  const packagingCheck = useMemo(() => getOrderPackagingCompleteness(order), [order]);
   const totalPackagesCount = allPackages.length;
-  const scannedCount = scannedPackageIds.length;
+  const validScannedIds = useMemo(
+    () => scannedPackageIds.filter(id => allPackages.some(p => p.id === id)),
+    [scannedPackageIds, allPackages]
+  );
+  const scannedCount = validScannedIds.length;
   const isAllPackagesScanned = totalPackagesCount > 0 && scannedCount >= totalPackagesCount;
+  const canFinalizeShipment = packagingCheck.isComplete && totalPackagesCount > 0 && isAllPackagesScanned;
   const isAlreadyShipped = order.status === 'shipped' || order.currentStage === 'ready';
 
   const showFeedback = (text: string, type: 'success' | 'error' | 'info') => {
@@ -243,8 +251,18 @@ export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
 
   // Complete Shipping -> Archive Order
   const handleFinalizeShipment = () => {
-    if (!isAllPackagesScanned && allPackages.length > 0) {
-      const missingCount = allPackages.length - scannedPackageIds.length;
+    if (!packagingCheck.isComplete) {
+      showFeedback(`⛔ Отгрузка невозможна: ${packagingCheck.reason}`, 'error');
+      return;
+    }
+
+    if (allPackages.length === 0) {
+      showFeedback('⛔ Отгрузка невозможна: в заказе еще не сформировано ни одной упаковки!', 'error');
+      return;
+    }
+
+    if (!isAllPackagesScanned) {
+      const missingCount = allPackages.length - scannedCount;
       showFeedback(`Невозможно отгрузить: еще не отсканировано ${missingCount} мест!`, 'error');
       return;
     }
@@ -347,6 +365,68 @@ export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Packaging Completeness Blocker / Verification Banner */}
+      {!packagingCheck.isComplete ? (
+        <div className="bg-rose-50 border-2 border-rose-300 rounded-3xl p-5 shadow-sm space-y-3">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+              <Lock className="w-5 h-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-black text-rose-950">
+                Отгрузка заказа заблокирована: не созданы все упаковки
+              </div>
+              <p className="text-xs font-semibold text-rose-800 mt-1">
+                {packagingCheck.reason}
+              </p>
+              <div className="flex flex-wrap items-center gap-2 mt-2 text-[11px] font-bold">
+                <span className="px-2.5 py-1 rounded-xl bg-white border border-rose-200 text-rose-900">
+                  Упаковок создано: {packagingCheck.packagesCount}
+                </span>
+                {packagingCheck.totalRequiredPieces > 0 && (
+                  <span className="px-2.5 py-1 rounded-xl bg-white border border-rose-200 text-rose-900">
+                    Деталей в упаковках: {packagingCheck.totalPackedPieces} из {packagingCheck.totalRequiredPieces} шт.
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {packagingCheck.missingDetails.length > 0 && (
+            <div className="bg-white/90 rounded-2xl p-3 border border-rose-200 space-y-1.5">
+              <div className="text-[11px] font-black text-rose-900 uppercase tracking-wide">
+                Неупакованные детали заказа ({packagingCheck.missingDetails.length} поз., {packagingCheck.missingPiecesCount} шт.):
+              </div>
+              <div className="max-h-40 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                {packagingCheck.missingDetails.slice(0, 12).map((d) => (
+                  <div
+                    key={d.id}
+                    className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-rose-50/70 border border-rose-100 text-[11px]"
+                  >
+                    <span className="font-semibold text-slate-800 truncate">
+                      {d.labelNumber ? `№${d.labelNumber} ` : ''}{d.name}
+                    </span>
+                    <span className="font-mono font-black text-rose-700 shrink-0">
+                      {d.packedQty}/{d.requiredQty} шт.
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {packagingCheck.missingDetails.length > 12 && (
+                <div className="text-[11px] font-bold text-rose-700">
+                  + еще {packagingCheck.missingDetails.length - 12} позиций не упакованы...
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-4 py-3 flex items-center gap-2.5 text-xs font-bold text-emerald-900">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{packagingCheck.reason}</span>
+        </div>
+      )}
 
       {/* Live Feedback Toast */}
       {feedbackMsg && (
@@ -711,13 +791,28 @@ export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
               После завершения отгрузки заказ будет помечен как <strong>"Отгружен"</strong> и отправлен в архив. В любой момент вы сможете открыть его в истории, чтобы просмотреть все производственные сессии (кто пилил, кромковал, сверлил) и структуру упакованных мест.
             </div>
 
+            {!canFinalizeShipment && (
+              <div className="p-3 rounded-2xl bg-rose-950/70 border border-rose-500/40 text-rose-200 text-[11px] font-bold flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <span>
+                  {!packagingCheck.isComplete
+                    ? `Проведение отгрузки заблокировано: ${packagingCheck.reason}`
+                    : `Отсканируйте все упаковочные места (${scannedCount} из ${totalPackagesCount}) перед завершением отгрузки.`}
+                </span>
+              </div>
+            )}
+
             <button
               onClick={handleFinalizeShipment}
-              disabled={!isAllPackagesScanned && allPackages.length > 0}
+              disabled={!canFinalizeShipment}
               className="w-full py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-sm shadow-xl shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
-              <Truck className="w-5 h-5" />
-              <span>Завершить отгрузку и отправить в архив</span>
+              {!packagingCheck.isComplete ? <Lock className="w-5 h-5" /> : <Truck className="w-5 h-5" />}
+              <span>
+                {!packagingCheck.isComplete
+                  ? 'Отгрузка заблокирована (не все упаковки)'
+                  : 'Завершить отгрузку и отправить в архив'}
+              </span>
             </button>
           </div>
         </div>
